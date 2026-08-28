@@ -4,6 +4,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/storage/hive_service.dart';
 import '../../domain/entities/conversation.dart';
+import '../../domain/entities/conversation_context_state.dart';
 
 class ConversationRepository {
   static const _indexKey = 'conversations_index';
@@ -21,7 +22,9 @@ class ConversationRepository {
       final list = HiveService.deepConvertMap(data)['items'] as List<dynamic>?;
       if (list == null) return [];
       return list
-          .map((e) => Conversation.fromJson(Map<String, dynamic>.from(e as Map)))
+          .map(
+            (e) => Conversation.fromJson(Map<String, dynamic>.from(e as Map)),
+          )
           .toList()
         ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     } catch (e) {
@@ -57,6 +60,7 @@ class ConversationRepository {
     // 清理关联数据
     await _box.delete(_messagesKey(id));
     await _box.delete(_recipesKey(id));
+    await _box.delete(_contextKey(id));
   }
 
   Future<void> _saveIndex(List<Conversation> conversations) async {
@@ -70,6 +74,7 @@ class ConversationRepository {
 
   String _messagesKey(String convId) => 'conv_${convId}_messages';
   String _recipesKey(String convId) => 'conv_${convId}_recipes';
+  String _contextKey(String convId) => 'conv_${convId}_context';
 
   Future<List<Map<String, dynamic>>> getMessages(String conversationId) async {
     final data = _box.get(_messagesKey(conversationId));
@@ -90,14 +95,35 @@ class ConversationRepository {
     List<Map<String, dynamic>> messages,
   ) async {
     final jsonStr = jsonEncode({'items': messages});
-    await _box.put(
-      _messagesKey(conversationId),
-      jsonDecode(jsonStr) as Map,
-    );
+    await _box.put(_messagesKey(conversationId), jsonDecode(jsonStr) as Map);
   }
 
   Future<void> clearMessages(String conversationId) async {
     await _box.delete(_messagesKey(conversationId));
+    await _box.delete(_contextKey(conversationId));
+  }
+
+  Future<ConversationContextState> getContextState(
+    String conversationId,
+  ) async {
+    final data = _box.get(_contextKey(conversationId));
+    if (data == null) return const ConversationContextState();
+    try {
+      return ConversationContextState.fromJson(
+        HiveService.deepConvertMap(data),
+      );
+    } catch (e) {
+      debugPrint('Failed to load context state for $conversationId: $e');
+      return const ConversationContextState();
+    }
+  }
+
+  Future<void> saveContextState(
+    String conversationId,
+    ConversationContextState state,
+  ) async {
+    final jsonStr = jsonEncode(state.toJson());
+    await _box.put(_contextKey(conversationId), jsonDecode(jsonStr) as Map);
   }
 
   // ========== 食谱关联 ==========
@@ -121,10 +147,7 @@ class ConversationRepository {
     List<Map<String, dynamic>> recipes,
   ) async {
     final jsonStr = jsonEncode({'items': recipes});
-    await _box.put(
-      _recipesKey(conversationId),
-      jsonDecode(jsonStr) as Map,
-    );
+    await _box.put(_recipesKey(conversationId), jsonDecode(jsonStr) as Map);
   }
 
   /// 根据食谱 ID 反查所属会话 ID
@@ -243,7 +266,9 @@ class ConversationRepository {
       await _settingsBox.put('chat_data_migrated', true);
       await setActiveConversationId(updatedConv.id);
 
-      debugPrint('Migrated $messageCount messages to conversation: ${updatedConv.id}');
+      debugPrint(
+        'Migrated $messageCount messages to conversation: ${updatedConv.id}',
+      );
       return updatedConv.id;
     } catch (e) {
       debugPrint('Migration failed: $e');

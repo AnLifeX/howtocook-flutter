@@ -19,6 +19,8 @@ import '../../application/providers/ai_providers.dart';
 import '../../domain/entities/ai_model_config.dart';
 import '../../domain/entities/chat_message.dart';
 import '../../domain/entities/conversation.dart';
+import '../../domain/entities/ai_usage_metrics.dart';
+import '../../domain/entities/conversation_context_state.dart';
 import '../../infrastructure/repositories/conversation_repository.dart';
 import '../../infrastructure/services/ai_service_factory.dart';
 import '../../infrastructure/services/mcp_service.dart';
@@ -91,29 +93,31 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
 
   // 深度思考开关
   bool _enableThinking = false;
+  ConversationContextState _contextState = const ConversationContextState();
+  bool _isCompressingContext = false;
+
+  static const double _contextWarningRatio = 0.70;
+  static const double _contextCompressionRatio = 0.82;
+  static const int _messagesKeptAfterCompression = 8;
 
   // System Prompt（根据模型能力动态生成）
   String _buildSystemPrompt({required bool supportsTools}) {
-    final now = DateTime.now();
-    final hour = now.hour;
-    String timeOfDay;
-    if (hour < 6) {
-      timeOfDay = '凌晨';
-    } else if (hour < 9) {
-      timeOfDay = '早晨';
-    } else if (hour < 12) {
-      timeOfDay = '上午';
-    } else if (hour < 14) {
-      timeOfDay = '中午';
-    } else if (hour < 18) {
-      timeOfDay = '下午';
-    } else if (hour < 22) {
-      timeOfDay = '晚上';
-    } else {
-      timeOfDay = '深夜';
+    if (!supportsTools) {
+      return '''你是“小厨”，专业、亲切、重视食品安全的烹饪助手。
+回答烹饪问题时给出清晰可执行的建议，并结合消息末尾提供的当前时间判断季节、餐次和时令。
+当前模型无法访问应用菜谱库或创建食谱；需要这些能力时，简短说明并建议用户切换到支持工具调用的模型，或前往菜谱页面搜索。''';
     }
 
-    final weekday = [
+    return '''你是“小厨”，专业、亲切、重视食品安全的烹饪助手，可以访问“程序员做饭指南”菜谱库。
+涉及菜谱库、具体食谱、推荐或创建食谱时优先使用合适的工具；普通烹饪常识可直接回答。
+工具结果要整理成自然语言，不输出原始 JSON；可补充实用技巧和风险提示。
+搜索食谱时先用 getAllRecipes 获取稳定 UUID，再将原 UUID 传给 getRecipeById，不得改写。
+创建成功后在回复中提及食谱名称，客户端会显示可预览和保存的卡片。
+结合消息末尾提供的当前时间判断季节、餐次和时令。''';
+  }
+
+  String _buildRuntimeContext(DateTime now) {
+    final weekday = const [
       '星期一',
       '星期二',
       '星期三',
@@ -122,64 +126,17 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
       '星期六',
       '星期日',
     ][now.weekday - 1];
-    final dateStr =
-        '${now.year}年${now.month}月${now.day}日 $weekday $timeOfDay ${now.hour}:${now.minute.toString().padLeft(2, '0')}';
-
-    // 如果模型不支持工具调用，返回简化版提示词
-    if (!supportsTools) {
-      return '''你是一个专业的烹饪助手，提供烹饪相关的建议和帮助。
-
-当前时间信息：$dateStr
-
-重要提示：
-⚠️ 当前模型不支持使用MCP工具获取菜谱数据库信息。如果用户需要查询具体菜谱、食材、做法等详细信息，请建议用户：
-1. 切换到支持工具调用的模型（如 Claude 系列模型、DeepSeek V4 等）
-2. 或者直接在应用的菜谱页面中浏览和搜索
-
-你可以：
-- 提供通用的烹饪建议和技巧
-- 解答烹饪相关的问题
-- 进行正常的对话交流
-- 根据当前时间（${now.month}月，$timeOfDay）给出适合的饮食建议
-
-但无法：
-- 直接查询菜谱数据库
-- 获取具体菜谱的详细做法
-- 创建新食谱''';
-    }
-
-    // 如果模型支持工具调用，返回完整版提示词（包含MCP工具说明）
-    return '''你是一个专业的烹饪助手，可以访问"程序员做饭指南"的完整菜谱数据库。
-
-当前时间信息：$dateStr
-
-重要规则：
-1. **优先使用MCP工具查询数据**：当用户询问菜谱、食材、做法等问题时，务必先调用相应的MCP工具获取数据
-2. **基于工具结果自然回答**：获取到工具数据后，用自然语言整理并呈现给用户，不要把原始JSON或工具返回的原文直接输出
-3. **补充专业建议**：在呈现菜谱内容后，可以添加烹饪技巧、注意事项等补充说明
-  4. **搜索功能**：要搜索食谱时使用 getAllRecipes 获取带稳定 UUID 的 V2 索引，再用 getRecipeById 查询完整详情
-5. **时令建议**：根据当前时间（${now.month}月，$timeOfDay）、季节和时间段给出合适的饮食建议
-
-可用的MCP工具：
-- getAllRecipes: 获取 V2 菜谱索引（UUID、简介、分类、难度、热量）
-- getRecipesByCategory: 按分类获取菜谱（荤菜、素菜、主食、汤、甜品、饮品等）
-- getRecipeById: 用名称、V2 UUID 或旧 ID 查询完整菜谱
-- recommendMeals: 智能推荐菜谱（可指定人数、过敏原、忌口）
-- whatToEat: 今天吃什么（随机推荐，可指定人数）
-- createRecipe: 创建完整的 V2 食谱
-
-关于createRecipe工具：
-- 优先传入 recipe 结构化对象；recipeText 只用于兼容旧文本模板
-- recipe 必须尽可能包含：name、description、category/categoryName、difficulty、estimatedCaloriesKcal、requirements、ingredients、tools、calculationNotes、steps、tips、warnings
-- requirements 是“必备原料和工具”；ingredients 是“用量与计算”，使用到的水、油等基础材料也要在 ingredients 中写明用量
-- ingredients 每项的 text 必须是“食材名 + 用量”的完整可读文本，例如“鸡蛋 3 颗”“食用油 30 克”，不能只写“3 颗”“30 克”
-- steps 是“操作”，description 里不要再写 1. 2. 等序号，客户端负责排版
-- 若表格对用量有意义，可在 ingredient.table 保留原列名与单元格，同时 text 必须提供可读文本
-- checkDuplicate 默认 true，similarityThreshold 默认 0.75
-- 创建成功后，在回复中提及食谱名称，系统会自动显示可点击的食谱卡片
-- 用户点击卡片可以预览并保存到"我的食谱"
-
-注意：getAllRecipes 返回的 UUID 可直接传给 getRecipeById，不要自行改写 ID。''';
+    final period = switch (now.hour) {
+      < 6 => '凌晨',
+      < 9 => '早晨',
+      < 12 => '上午',
+      < 14 => '中午',
+      < 18 => '下午',
+      < 22 => '晚上',
+      _ => '深夜',
+    };
+    final minute = now.minute.toString().padLeft(2, '0');
+    return '[运行时信息：当前为 ${now.year}年${now.month}月${now.day}日 $weekday $period ${now.hour}:$minute（Asia/Shanghai）。仅在与问题相关时使用。]';
   }
 
   @override
@@ -199,18 +156,25 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
       final tools = await _mcpService.listTools();
 
       // 转换工具格式：MCP 使用 inputSchema，Claude API 需要 input_schema
-      final convertedTools = tools.map((tool) {
-        final converted = Map<String, dynamic>.from(tool);
-        if (converted.containsKey('inputSchema')) {
-          converted['input_schema'] = converted.remove('inputSchema');
-        }
-        if (converted['name'] == 'mcp_howtocook_createRecipe') {
-          converted['description'] =
-              '创建完整的 HowToCook V2 菜谱，保留简介、热量、必备项、用量与计算、表格和无自带序号的操作。';
-          converted['input_schema'] = _v2CreateRecipeInputSchema;
-        }
-        return converted;
-      }).toList();
+      final convertedTools =
+          tools.map((tool) {
+            final converted = Map<String, dynamic>.from(tool);
+            if (converted.containsKey('inputSchema')) {
+              converted['input_schema'] = converted.remove('inputSchema');
+            }
+            if (converted['name'] == 'mcp_howtocook_createRecipe') {
+              converted['description'] =
+                  '创建完整的 HowToCook V2 菜谱，保留简介、热量、必备项、用量与计算、表格和无自带序号的操作。';
+              converted['input_schema'] = _v2CreateRecipeInputSchema;
+            }
+            return Map<String, dynamic>.from(
+              _canonicalizeJson(converted) as Map,
+            );
+          }).toList()..sort(
+            (a, b) => (a['name'] ?? '').toString().compareTo(
+              (b['name'] ?? '').toString(),
+            ),
+          );
 
       setState(() {
         _mcpTools = convertedTools;
@@ -222,12 +186,23 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
     }
   }
 
+  dynamic _canonicalizeJson(dynamic value) {
+    if (value is Map) {
+      final keys = value.keys.map((key) => key.toString()).toList()..sort();
+      return <String, dynamic>{
+        for (final key in keys) key: _canonicalizeJson(value[key]),
+      };
+    }
+    if (value is List) return value.map(_canonicalizeJson).toList();
+    return value;
+  }
+
   static const Map<String, dynamic> _v2CreateRecipeInputSchema = {
     'type': 'object',
     'properties': {
       'recipe': {
         'type': 'object',
-        'description': 'V2 结构化菜谱',
+        'description': '完整的 V2 结构化菜谱。尽量填写简介、分类、难度、热量、必备项、用量计算、工具、操作、提示和警告。',
         'properties': {
           'name': {'type': 'string'},
           'description': {'type': 'string'},
@@ -237,6 +212,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
           'estimatedCaloriesKcal': {'type': 'integer', 'minimum': 1},
           'requirements': {
             'type': 'array',
+            'description': '烹饪前必须具备的原料和工具。',
             'items': {
               'oneOf': [
                 {'type': 'string'},
@@ -257,6 +233,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
           },
           'ingredients': {
             'type': 'array',
+            'description': '所有食材的可计算用量，包括水、油等基础材料。',
             'items': {
               'oneOf': [
                 {'type': 'string'},
@@ -290,6 +267,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
           },
           'steps': {
             'type': 'array',
+            'description': '按顺序执行的操作；description 不要自带数字序号。',
             'items': {
               'oneOf': [
                 {'type': 'string'},
@@ -379,10 +357,14 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
     try {
       final messagesJson = await _conversationRepo.getMessages(conversationId);
       final recipesJson = await _conversationRepo.getRecipes(conversationId);
+      final contextState = await _conversationRepo.getContextState(
+        conversationId,
+      );
 
       setState(() {
         _messages.clear();
         _createdRecipes.clear();
+        _contextState = contextState;
         _messages.addAll(
           messagesJson.map((json) => ChatMessage.fromJson(json)).toList(),
         );
@@ -433,6 +415,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
           .map((item) => item as Map<String, dynamic>)
           .toList();
       await _conversationRepo.saveMessages(convId, jsonList);
+      await _conversationRepo.saveContextState(convId, _contextState);
 
       // 更新会话元数据
       await _updateConversationMeta();
@@ -524,6 +507,226 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
     return '${accumulated.toString()}\n\n$current';
   }
 
+  AIUsageMetrics _mergeUsage(AIUsageMetrics? current, AIUsageMetrics next) {
+    if (current == null) return next;
+    return AIUsageMetrics(
+      inputTokens: current.inputTokens > next.inputTokens
+          ? current.inputTokens
+          : next.inputTokens,
+      outputTokens: current.outputTokens > next.outputTokens
+          ? current.outputTokens
+          : next.outputTokens,
+      cacheReadTokens: current.cacheReadTokens > next.cacheReadTokens
+          ? current.cacheReadTokens
+          : next.cacheReadTokens,
+      cacheWriteTokens: current.cacheWriteTokens > next.cacheWriteTokens
+          ? current.cacheWriteTokens
+          : next.cacheWriteTokens,
+      cacheMissTokens:
+          current.effectiveCacheMissTokens > next.effectiveCacheMissTokens
+          ? current.effectiveCacheMissTokens
+          : next.effectiveCacheMissTokens,
+    );
+  }
+
+  void _recordUsage(AIUsageMetrics? usage) {
+    if (usage == null || (usage.inputTokens == 0 && usage.outputTokens == 0)) {
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _contextState = _contextState.recordUsage(usage);
+      });
+    } else {
+      _contextState = _contextState.recordUsage(usage);
+    }
+  }
+
+  int _estimateTextTokens(String text) {
+    var asciiChars = 0;
+    var nonAsciiTokens = 0;
+    for (final rune in text.runes) {
+      if (rune <= 0x7f) {
+        asciiChars++;
+      } else {
+        nonAsciiTokens++;
+      }
+    }
+    return nonAsciiTokens + (asciiChars / 4).ceil();
+  }
+
+  int _estimateMessageTokens(ChatMessage message) {
+    var tokens = 6;
+    for (final item in message.content) {
+      if (item is TextContent) {
+        tokens += _estimateTextTokens(item.text);
+      } else if (item is ImageContent) {
+        tokens += 1200;
+      } else if (item is ToolUseContent) {
+        tokens += _estimateTextTokens(jsonEncode(item.input)) + 20;
+      } else if (item is ToolResultContent) {
+        tokens += _estimateTextTokens(jsonEncode(item.result)) + 20;
+      }
+    }
+    if (message.runtimeContext != null) {
+      tokens += _estimateTextTokens(message.runtimeContext!);
+    }
+    return tokens;
+  }
+
+  int _estimatedContextTokens(AIModelConfig model) {
+    var tokens = _estimateTextTokens(
+      _buildSystemPrompt(supportsTools: model.capabilities.supportsMCP),
+    );
+    if (_contextState.hasSummary) {
+      tokens += _estimateTextTokens(_contextState.summary!) + 40;
+    }
+    final start = _contextState.summarizedMessageCount.clamp(
+      0,
+      _messages.length,
+    );
+    for (final message in _messages.skip(start)) {
+      tokens += _estimateMessageTokens(message);
+    }
+    if (model.capabilities.supportsMCP && _mcpTools != null) {
+      tokens += _estimateTextTokens(jsonEncode(_mcpTools));
+    }
+    return tokens;
+  }
+
+  double _contextRatioForModel(AIModelConfig model) {
+    if (model.capabilities.contextWindow <= 0) return 0;
+    return _estimatedContextTokens(model) / model.capabilities.contextWindow;
+  }
+
+  Future<bool> _confirmLongContextIfNeeded() async {
+    final model = _resolveActiveModel();
+    if (model == null) return true;
+    final ratio = _contextRatioForModel(model);
+    if (ratio < _contextWarningRatio || _contextState.compressionApproved) {
+      return true;
+    }
+    final percent = (ratio * 100).clamp(0, 999).round();
+    final continueConversation = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('当前会话上下文较长'),
+        content: Text(
+          '预计已使用 $percent% 的上下文。建议新建会话；如果继续，达到安全阈值后会自动将较早内容压缩为摘要，聊天记录仍会完整保留。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('新建会话'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('继续并允许压缩'),
+          ),
+        ],
+      ),
+    );
+    if (continueConversation == true) {
+      setState(() {
+        _contextState = _contextState.copyWith(compressionApproved: true);
+      });
+      return true;
+    }
+    await _createNewConversation();
+    return false;
+  }
+
+  Future<void> _compressContextIfNeeded(AIModelConfig model) async {
+    if (!_contextState.compressionApproved ||
+        _contextRatioForModel(model) < _contextCompressionRatio ||
+        _isCompressingContext) {
+      return;
+    }
+    final historyEnd = _messages.length - 1;
+    final cutIndex = historyEnd - _messagesKeptAfterCompression;
+    final startIndex = _contextState.summarizedMessageCount.clamp(
+      0,
+      historyEnd,
+    );
+    if (cutIndex <= startIndex) return;
+
+    _isCompressingContext = true;
+    if (mounted) {
+      setState(() => _aiStatusText = '压缩较早上下文中...');
+    }
+    try {
+      final transcript = StringBuffer();
+      if (_contextState.hasSummary) {
+        transcript.writeln('已有摘要：\n${_contextState.summary}\n');
+      }
+      for (final message in _messages.sublist(startIndex, cutIndex)) {
+        final role = switch (message.role) {
+          MessageRole.user => '用户',
+          MessageRole.assistant => '助手',
+          MessageRole.system => '系统',
+        };
+        final text = _extractTextFromMessage(message).trim();
+        if (text.isNotEmpty) transcript.writeln('$role：$text');
+        if (message.createdRecipeIds?.isNotEmpty == true) {
+          transcript.writeln('已创建食谱ID：${message.createdRecipeIds!.join(', ')}');
+        }
+      }
+
+      final service = AIServiceFactory.create(model);
+      AIUsageMetrics? usage;
+      final response = await service.sendMessageSync(
+        messages: [
+          ChatMessage(
+            id: 'compact-system',
+            role: MessageRole.system,
+            content: const [
+              MessageContent.text(
+                text:
+                    '将较早的烹饪对话压缩成可供后续继续对话的中文摘要。保留用户偏好、忌口、人数、已有结论、关键食材用量、食谱名称和未完成事项；删除寒暄、重复和推理过程。只输出摘要。',
+              ),
+            ],
+            timestamp: DateTime.fromMillisecondsSinceEpoch(0),
+          ),
+          ChatMessage(
+            id: 'compact-input',
+            role: MessageRole.user,
+            content: [MessageContent.text(text: transcript.toString())],
+            timestamp: DateTime.now(),
+          ),
+        ],
+        maxTokens: 2048,
+        onUsage: (value) => usage = _mergeUsage(usage, value),
+      );
+      final summary = response.content
+          .whereType<TextContent>()
+          .map((item) => item.text.trim())
+          .where((text) => text.isNotEmpty)
+          .join('\n');
+      if (summary.isNotEmpty) {
+        setState(() {
+          _contextState = _contextState.copyWith(
+            summary: summary,
+            summarizedMessageCount: cutIndex,
+            compressionApproved: false,
+          );
+        });
+        _recordUsage(usage);
+      }
+    } catch (e) {
+      debugPrint('Context compression failed: $e');
+      if (mounted) {
+        AppSnackBar.show(
+          context,
+          '上下文压缩失败，本轮将继续使用完整历史',
+          bottomOffset: AppSnackBar.kChatBottomOffset,
+        );
+      }
+    } finally {
+      _isCompressingContext = false;
+      if (mounted) setState(() => _aiStatusText = '回复中...');
+    }
+  }
+
   /// 保存设置
   Future<void> _saveSetting(String key, dynamic value) async {
     try {
@@ -596,6 +799,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
                   ? _buildEmptyState()
                   : _buildMessageList(),
             ),
+            _buildContextStatusBar(),
             _buildInputArea(),
           ],
         ),
@@ -668,16 +872,22 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
       data: (models) {
         if (models.isEmpty) {
           return _buildModelSelectorContainer(
-            Text(
-              '暂无模型',
-              style: AppTextStyles.bodySmall.copyWith(color: AppColors.primary),
+            InkWell(
+              onTap: () => context.push('/model-management'),
+              child: Text(
+                '添加模型',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           );
         }
 
         // 查找当前选中模型的最新版本
         final matchingModel = models
-            .where((model) => model.id == selectedModel.id)
+            .where((model) => model.id == selectedModel?.id)
             .firstOrNull;
 
         if (matchingModel != null) {
@@ -743,8 +953,125 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
     );
   }
 
+  Widget _buildContextStatusBar() {
+    final model = ref.watch(selectedModelConfigProvider);
+    if (model == null || _messages.isEmpty) return const SizedBox.shrink();
+    final estimated = _estimatedContextTokens(model);
+    final window = model.capabilities.contextWindow;
+    final ratio = window <= 0 ? 0.0 : estimated / window;
+    final warning = ratio >= _contextWarningRatio;
+    final cacheRate = _contextState.cacheHitRate;
+
+    return Material(
+      color: warning
+          ? AppColors.warning.withValues(alpha: 0.10)
+          : AppColors.surface,
+      child: InkWell(
+        onTap: () => _showContextDetails(model),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+          child: Row(
+            children: [
+              Icon(
+                warning ? Icons.warning_amber_rounded : Icons.data_usage,
+                size: 15,
+                color: warning ? AppColors.warning : AppColors.textSecondary,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  '上下文 ${_formatTokenCount(estimated)} / ${_formatTokenCount(window)}'
+                  '${cacheRate == null ? '' : ' · 缓存 ${(cacheRate * 100).round()}%'}'
+                  '${_contextState.hasSummary ? ' · 已压缩' : ''}',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: warning
+                        ? AppColors.warning
+                        : AppColors.textSecondary,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const Icon(Icons.chevron_right, size: 16),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _formatTokenCount(int value) {
+    if (value >= 1000000) {
+      return '${(value / 1000000).toStringAsFixed(value >= 10000000 ? 0 : 1)}M';
+    }
+    if (value >= 1000) {
+      return '${(value / 1000).toStringAsFixed(value >= 10000 ? 0 : 1)}K';
+    }
+    return '$value';
+  }
+
+  void _showContextDetails(AIModelConfig model) {
+    final estimated = _estimatedContextTokens(model);
+    final window = model.capabilities.contextWindow;
+    final percent = window <= 0 ? 0 : (estimated / window * 100).round();
+    final cacheRate = _contextState.cacheHitRate;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('会话上下文', style: AppTextStyles.cardTitle),
+              const SizedBox(height: 16),
+              LinearProgressIndicator(
+                value: (estimated / window).clamp(0, 1).toDouble(),
+                minHeight: 8,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                '预计占用 ${_formatTokenCount(estimated)} / ${_formatTokenCount(window)}（$percent%）',
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _contextState.lastInputTokens > 0
+                    ? '上次请求：输入 ${_formatTokenCount(_contextState.lastInputTokens)}，输出 ${_formatTokenCount(_contextState.lastOutputTokens)} tokens'
+                    : '服务商尚未返回本会话的 token 用量数据',
+                style: AppTextStyles.bodySmall,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                cacheRate == null
+                    ? '缓存命中：暂无数据（部分中转服务不会返回）'
+                    : '累计缓存命中 ${(cacheRate * 100).toStringAsFixed(1)}% · 命中 ${_formatTokenCount(_contextState.totalCacheReadTokens)} · 未命中 ${_formatTokenCount(_contextState.totalCacheMissTokens)} tokens',
+                style: AppTextStyles.bodySmall,
+              ),
+              if (_contextState.hasSummary) ...[
+                const SizedBox(height: 6),
+                Text(
+                  '较早的 ${_contextState.summarizedMessageCount} 条消息已压缩供模型使用；页面中的完整聊天记录未删除。',
+                  style: AppTextStyles.bodySmall,
+                ),
+              ],
+              const SizedBox(height: 12),
+              Text(
+                '占用量为客户端估算；上次请求数据来自模型服务商。达到 70% 会提醒，用户确认继续后达到 82% 自动压缩。',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   /// 解析当前有效的模型
-  AIModelConfig _resolveActiveModel() {
+  AIModelConfig? _resolveActiveModel() {
     final selected = ref.read(selectedModelConfigProvider);
     final modelsAsyncValue = ref.read(availableModelsProvider);
 
@@ -753,11 +1080,11 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
     return modelsAsyncValue.maybeWhen(
       data: (models) {
         if (models.isEmpty) {
-          return selected;
+          return null;
         }
 
         final hasSelected = models.any(
-          (model) => model.id == selected.id && model.isEnabled,
+          (model) => model.id == selected?.id && model.isEnabled,
         );
 
         if (hasSelected) {
@@ -770,7 +1097,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
           orElse: () => models.first,
         );
 
-        if (fallback.id != selected.id) {
+        if (fallback.id != selected?.id) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             ref.read(selectedModelConfigProvider.notifier).state = fallback;
           });
@@ -843,6 +1170,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
 
   /// 构建空状态
   Widget _buildEmptyState() {
+    final hasModel = ref.watch(selectedModelConfigProvider) != null;
     return SingleChildScrollView(
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 32),
@@ -877,7 +1205,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
             Text('小厨', style: AppTextStyles.h3),
             const SizedBox(height: 8),
             Text(
-              '您的贴心美食顾问',
+              hasModel ? '您的贴心美食顾问' : '先添加一个您自己的 AI 模型',
               style: AppTextStyles.bodyMedium.copyWith(
                 color: AppColors.textSecondary,
               ),
@@ -886,7 +1214,9 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 32),
               child: Text(
-                '问我任何关于烹饪的问题\n我将为您提供专业建议和菜谱推荐',
+                hasModel
+                    ? '问我任何关于烹饪的问题\n我将为您提供专业建议和菜谱推荐'
+                    : '应用不再内置共享 AI Key。您添加的模型配置和 Key 仅保存在本机，应用升级不会覆盖。',
                 textAlign: TextAlign.center,
                 style: AppTextStyles.bodySmall.copyWith(
                   color: AppColors.textSecondary,
@@ -895,16 +1225,23 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              alignment: WrapAlignment.center,
-              children: [
-                _buildSuggestionChip('今天吃什么？'),
-                _buildSuggestionChip('推荐一道家常菜'),
-                _buildSuggestionChip('如何做红烧肉？'),
-              ],
-            ),
+            if (!hasModel)
+              FilledButton.icon(
+                onPressed: () => context.push('/model-management'),
+                icon: const Icon(Icons.add),
+                label: const Text('前往模型管理'),
+              )
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                alignment: WrapAlignment.center,
+                children: [
+                  _buildSuggestionChip('今天吃什么？'),
+                  _buildSuggestionChip('推荐一道家常菜'),
+                  _buildSuggestionChip('如何做红烧肉？'),
+                ],
+              ),
           ],
         ),
       ),
@@ -1196,6 +1533,15 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
   Future<void> _sendMessage() async {
     final content = _inputController.text.trim();
     if (content.isEmpty && _selectedImagePath == null) return;
+    if (_resolveActiveModel() == null) {
+      AppSnackBar.show(
+        context,
+        '请先在模型管理中添加自己的 AI 模型和 API Key',
+        bottomOffset: AppSnackBar.kChatBottomOffset,
+      );
+      return;
+    }
+    if (!await _confirmLongContextIfNeeded()) return;
 
     // 创建用户消息
     final messageContent = <MessageContent>[
@@ -1212,6 +1558,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
       role: MessageRole.user,
       content: messageContent,
       timestamp: DateTime.now(),
+      runtimeContext: _buildRuntimeContext(DateTime.now()),
     );
 
     setState(() {
@@ -1260,6 +1607,9 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
     try {
       // 获取当前有效的模型，应用聊天页的 thinking 开关覆盖
       final baseModel = _resolveActiveModel();
+      if (baseModel == null) {
+        throw Exception('尚未配置 AI 模型，请先前往“模型管理”添加自己的模型和 API Key');
+      }
       final currentModel = baseModel.copyWith(
         capabilities: baseModel.capabilities.copyWith(
           enableThinking: _enableThinking,
@@ -1267,8 +1617,10 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
       );
       final aiService = AIServiceFactory.create(currentModel);
 
-      // 准备消息历史（不包括刚添加的临时消息）
-      // 只保留最近3轮对话（6条消息：3条用户+3条AI），避免token超限
+      await _compressContextIfNeeded(currentModel);
+
+      // 准备消息历史（不包括刚添加的临时消息）。历史保持追加式，
+      // 仅在用户确认后达到阈值时用摘要替换较早的模型上下文。
       var allHistory = _messages.sublist(0, _messages.length - 1);
 
       // 处理图片：将本地路径转换为 base64
@@ -1315,6 +1667,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
               timestamp: msg.timestamp,
               modelId: msg.modelId,
               reasoningContent: msg.reasoningContent,
+              runtimeContext: msg.runtimeContext,
               createdRecipeIds: msg.createdRecipeIds,
             ),
           );
@@ -1325,19 +1678,14 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
 
       allHistory = processedHistory;
 
-      // 筛选用户和AI的消息，保留最近3轮
-      final recentMessages = <ChatMessage>[];
-      var userCount = 0;
-      for (var i = allHistory.length - 1; i >= 0; i--) {
-        final msg = allHistory[i];
-        if (msg.role == MessageRole.user) {
-          userCount++;
-          if (userCount > 3) break;
-        }
-        if (msg.role != MessageRole.system) {
-          recentMessages.insert(0, msg);
-        }
-      }
+      final summarizedCount = _contextState.summarizedMessageCount.clamp(
+        0,
+        allHistory.length,
+      );
+      final recentMessages = allHistory
+          .skip(summarizedCount)
+          .where((msg) => msg.role != MessageRole.system)
+          .toList();
 
       // 检查模型是否支持工具调用（在生成 system prompt 之前）
       final modelInfo = await aiService.getModelInfo();
@@ -1357,6 +1705,18 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
           ],
           timestamp: DateTime.now(),
         ),
+        if (_contextState.hasSummary)
+          ChatMessage(
+            id: 'conversation-summary',
+            role: MessageRole.system,
+            content: [
+              MessageContent.text(
+                text:
+                    '以下是较早对话的压缩摘要。将它作为历史事实和用户偏好继续对话；若与较新消息冲突，以较新消息为准：\n${_contextState.summary}',
+              ),
+            ],
+            timestamp: DateTime.fromMillisecondsSinceEpoch(0),
+          ),
         ...recentMessages,
       ];
 
@@ -1386,9 +1746,13 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
 
           final streamingTextBuffer = StringBuffer();
 
+          AIUsageMetrics? requestUsage;
           final response = await aiService.sendMessageSync(
             messages: history,
             tools: _mcpTools,
+            onUsage: (usage) {
+              requestUsage = _mergeUsage(requestUsage, usage);
+            },
             onTextChunk: (chunk) {
               streamingTextBuffer.write(chunk);
               if (mounted) {
@@ -1423,6 +1787,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
               }
             },
           );
+          _recordUsage(requestUsage);
 
           debugPrint(
             '📨 Got response with ${response.content.length} content items',
@@ -1599,8 +1964,12 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
           });
 
           String? reasoningContent;
+          AIUsageMetrics? requestUsage;
           final responseStream = aiService.sendMessage(
             messages: history,
+            onUsage: (usage) {
+              requestUsage = _mergeUsage(requestUsage, usage);
+            },
             onReasoningContent: (value) {
               reasoningContent = value;
               setState(() {
@@ -1629,6 +1998,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
               _streamingText = responseBuffer.toString();
             });
           }
+          _recordUsage(requestUsage);
 
           debugPrint(
             'Streaming complete. Received $chunkCount chunks, total ${responseBuffer.length} characters',
@@ -1726,8 +2096,12 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
               _streamingReasoningText = '';
             });
 
+            AIUsageMetrics? nextRequestUsage;
             final nextStream = aiService.sendMessage(
               messages: history,
+              onUsage: (usage) {
+                nextRequestUsage = _mergeUsage(nextRequestUsage, usage);
+              },
               onReasoningContent: (value) {
                 nextReasoningContent = value;
                 setState(() {
@@ -1747,6 +2121,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
                     : nextResponseBuffer.toString();
               });
             }
+            _recordUsage(nextRequestUsage);
 
             // 最终响应
             final finalText = cleanResponseText.isNotEmpty
@@ -1794,7 +2169,14 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
           // 使用非流式响应（等待完整回复）
           debugPrint('Using non-streaming response (streaming disabled)');
 
-          final response = await aiService.sendMessageSync(messages: history);
+          AIUsageMetrics? requestUsage;
+          final response = await aiService.sendMessageSync(
+            messages: history,
+            onUsage: (usage) {
+              requestUsage = _mergeUsage(requestUsage, usage);
+            },
+          );
+          _recordUsage(requestUsage);
 
           // 更新最终消息（使用响应中的reasoning内容）
           setState(() {
@@ -2498,6 +2880,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
               setState(() {
                 _messages.clear();
                 _createdRecipes.clear();
+                _contextState = const ConversationContextState();
               });
               _saveChatHistory();
               Navigator.pop(context);
@@ -2517,7 +2900,10 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
   /// 新建会话
   Future<void> _createNewConversation() async {
     // 当前会话为空时，不重复创建
-    if (_messages.isEmpty) return;
+    if (_messages.isEmpty &&
+        _conversations.any((item) => item.id == _currentConversationId)) {
+      return;
+    }
 
     // 保存当前会话
     await _saveChatHistory();
@@ -2531,6 +2917,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
       _messages.clear();
       _createdRecipes.clear();
       _mcpCallHistory.clear();
+      _contextState = const ConversationContextState();
     });
 
     _conversations = await _conversationRepo.getAll();
