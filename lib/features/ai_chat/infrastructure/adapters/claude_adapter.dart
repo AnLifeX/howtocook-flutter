@@ -30,7 +30,7 @@ class ClaudeAdapter implements AIService {
     this.enableThinking = false,
     this.thinkingBudgetTokens = 10000,
   }) : _dio = Dio() {
-    final baseUrl = customApiUrl ?? defaultApiUrl;
+    final baseUrl = _normalizeBaseUrl(customApiUrl ?? defaultApiUrl);
     _dio.options.baseUrl = baseUrl;
 
     // 基础headers
@@ -50,6 +50,17 @@ class ClaudeAdapter implements AIService {
     _dio.options.headers = headers;
     _dio.options.connectTimeout = const Duration(seconds: 30);
     _dio.options.receiveTimeout = const Duration(seconds: 300);
+  }
+
+  static String _normalizeBaseUrl(String url) {
+    var normalized = url.trim().replaceFirst(RegExp(r'/+$'), '');
+    if (normalized.toLowerCase().endsWith('/messages')) {
+      normalized = normalized.substring(
+        0,
+        normalized.length - '/messages'.length,
+      );
+    }
+    return normalized;
   }
 
   @override

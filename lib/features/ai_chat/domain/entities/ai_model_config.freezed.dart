@@ -33,6 +33,7 @@ mixin _$AIModelConfig {
       throw _privateConstructorUsedError; // 用户自定义 API 地址
   String? get customApiKey =>
       throw _privateConstructorUsedError; // 用户自定义 API Key
+  AIAPIFormat get apiFormat => throw _privateConstructorUsedError; // 请求/响应协议
   bool get isDefault => throw _privateConstructorUsedError; // 是否为默认模型
   bool get isBuiltin => throw _privateConstructorUsedError; // 是否为内置模型（不可删除）
 // 模型能力（根据官方文档或验证结果填充）
@@ -67,6 +68,7 @@ abstract class $AIModelConfigCopyWith<$Res> {
       bool useBuiltinKey,
       String? customApiUrl,
       String? customApiKey,
+      AIAPIFormat apiFormat,
       bool isDefault,
       bool isBuiltin,
       ModelCapabilities capabilities,
@@ -101,6 +103,7 @@ class _$AIModelConfigCopyWithImpl<$Res, $Val extends AIModelConfig>
     Object? useBuiltinKey = null,
     Object? customApiUrl = freezed,
     Object? customApiKey = freezed,
+    Object? apiFormat = null,
     Object? isDefault = null,
     Object? isBuiltin = null,
     Object? capabilities = null,
@@ -147,6 +150,10 @@ class _$AIModelConfigCopyWithImpl<$Res, $Val extends AIModelConfig>
           ? _value.customApiKey
           : customApiKey // ignore: cast_nullable_to_non_nullable
               as String?,
+      apiFormat: null == apiFormat
+          ? _value.apiFormat
+          : apiFormat // ignore: cast_nullable_to_non_nullable
+              as AIAPIFormat,
       isDefault: null == isDefault
           ? _value.isDefault
           : isDefault // ignore: cast_nullable_to_non_nullable
@@ -209,6 +216,7 @@ abstract class _$$AIModelConfigImplCopyWith<$Res>
       bool useBuiltinKey,
       String? customApiUrl,
       String? customApiKey,
+      AIAPIFormat apiFormat,
       bool isDefault,
       bool isBuiltin,
       ModelCapabilities capabilities,
@@ -242,6 +250,7 @@ class __$$AIModelConfigImplCopyWithImpl<$Res>
     Object? useBuiltinKey = null,
     Object? customApiUrl = freezed,
     Object? customApiKey = freezed,
+    Object? apiFormat = null,
     Object? isDefault = null,
     Object? isBuiltin = null,
     Object? capabilities = null,
@@ -288,6 +297,10 @@ class __$$AIModelConfigImplCopyWithImpl<$Res>
           ? _value.customApiKey
           : customApiKey // ignore: cast_nullable_to_non_nullable
               as String?,
+      apiFormat: null == apiFormat
+          ? _value.apiFormat
+          : apiFormat // ignore: cast_nullable_to_non_nullable
+              as AIAPIFormat,
       isDefault: null == isDefault
           ? _value.isDefault
           : isDefault // ignore: cast_nullable_to_non_nullable
@@ -337,6 +350,7 @@ class _$AIModelConfigImpl implements _AIModelConfig {
       this.useBuiltinKey = false,
       this.customApiUrl,
       this.customApiKey,
+      this.apiFormat = AIAPIFormat.auto,
       this.isDefault = false,
       this.isBuiltin = false,
       this.capabilities = const ModelCapabilities(),
@@ -380,6 +394,10 @@ class _$AIModelConfigImpl implements _AIModelConfig {
 // 用户自定义 API Key
   @override
   @JsonKey()
+  final AIAPIFormat apiFormat;
+// 请求/响应协议
+  @override
+  @JsonKey()
   final bool isDefault;
 // 是否为默认模型
   @override
@@ -407,7 +425,7 @@ class _$AIModelConfigImpl implements _AIModelConfig {
 
   @override
   String toString() {
-    return 'AIModelConfig(id: $id, provider: $provider, modelId: $modelId, displayName: $displayName, description: $description, isEnabled: $isEnabled, useBuiltinKey: $useBuiltinKey, customApiUrl: $customApiUrl, customApiKey: $customApiKey, isDefault: $isDefault, isBuiltin: $isBuiltin, capabilities: $capabilities, validationStatus: $validationStatus, lastValidated: $lastValidated, validationError: $validationError, createdAt: $createdAt, updatedAt: $updatedAt)';
+    return 'AIModelConfig(id: $id, provider: $provider, modelId: $modelId, displayName: $displayName, description: $description, isEnabled: $isEnabled, useBuiltinKey: $useBuiltinKey, customApiUrl: $customApiUrl, customApiKey: $customApiKey, apiFormat: $apiFormat, isDefault: $isDefault, isBuiltin: $isBuiltin, capabilities: $capabilities, validationStatus: $validationStatus, lastValidated: $lastValidated, validationError: $validationError, createdAt: $createdAt, updatedAt: $updatedAt)';
   }
 
   @override
@@ -431,6 +449,8 @@ class _$AIModelConfigImpl implements _AIModelConfig {
                 other.customApiUrl == customApiUrl) &&
             (identical(other.customApiKey, customApiKey) ||
                 other.customApiKey == customApiKey) &&
+            (identical(other.apiFormat, apiFormat) ||
+                other.apiFormat == apiFormat) &&
             (identical(other.isDefault, isDefault) ||
                 other.isDefault == isDefault) &&
             (identical(other.isBuiltin, isBuiltin) ||
@@ -462,6 +482,7 @@ class _$AIModelConfigImpl implements _AIModelConfig {
       useBuiltinKey,
       customApiUrl,
       customApiKey,
+      apiFormat,
       isDefault,
       isBuiltin,
       capabilities,
@@ -496,6 +517,7 @@ abstract class _AIModelConfig implements AIModelConfig {
       final bool useBuiltinKey,
       final String? customApiUrl,
       final String? customApiKey,
+      final AIAPIFormat apiFormat,
       final bool isDefault,
       final bool isBuiltin,
       final ModelCapabilities capabilities,
@@ -527,6 +549,8 @@ abstract class _AIModelConfig implements AIModelConfig {
   @override // 用户自定义 API 地址
   String? get customApiKey;
   @override // 用户自定义 API Key
+  AIAPIFormat get apiFormat;
+  @override // 请求/响应协议
   bool get isDefault;
   @override // 是否为默认模型
   bool get isBuiltin;

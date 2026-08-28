@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- AI 模型新增自动、Chat Completions、Responses 和 Anthropic Messages 接口格式；DeepSeek 可按模型选择三种兼容协议。
+
 ### 新增
 - **AI 上下文状态**：聊天页显示上下文估算占用和服务商缓存命中数据；会话临近上限时提示新建会话，确认继续后自动压缩较早上下文且保留完整聊天记录。
 

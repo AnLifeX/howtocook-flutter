@@ -17,6 +17,8 @@ _$AIModelConfigImpl _$$AIModelConfigImplFromJson(Map<String, dynamic> json) =>
       useBuiltinKey: json['useBuiltinKey'] as bool? ?? false,
       customApiUrl: json['customApiUrl'] as String?,
       customApiKey: json['customApiKey'] as String?,
+      apiFormat: $enumDecodeNullable(_$AIAPIFormatEnumMap, json['apiFormat']) ??
+          AIAPIFormat.auto,
       isDefault: json['isDefault'] as bool? ?? false,
       isBuiltin: json['isBuiltin'] as bool? ?? false,
       capabilities: json['capabilities'] == null
@@ -49,6 +51,7 @@ Map<String, dynamic> _$$AIModelConfigImplToJson(_$AIModelConfigImpl instance) =>
       'useBuiltinKey': instance.useBuiltinKey,
       'customApiUrl': instance.customApiUrl,
       'customApiKey': instance.customApiKey,
+      'apiFormat': _$AIAPIFormatEnumMap[instance.apiFormat]!,
       'isDefault': instance.isDefault,
       'isBuiltin': instance.isBuiltin,
       'capabilities': instance.capabilities,
@@ -64,6 +67,13 @@ const _$AIProviderEnumMap = {
   AIProvider.claude: 'claude',
   AIProvider.openai: 'openai',
   AIProvider.deepseek: 'deepseek',
+};
+
+const _$AIAPIFormatEnumMap = {
+  AIAPIFormat.auto: 'auto',
+  AIAPIFormat.chatCompletions: 'chat_completions',
+  AIAPIFormat.responses: 'responses',
+  AIAPIFormat.anthropicMessages: 'anthropic_messages',
 };
 
 const _$ModelValidationStatusEnumMap = {

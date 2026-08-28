@@ -18,9 +18,10 @@ class AIServiceFactory {
     final apiKey = _getApiKey(config);
     final apiUrl = _getApiUrl(config);
 
-    // 根据服务商创建对应的适配器
-    switch (config.provider) {
-      case AIProvider.claude:
+    final apiFormat = resolveAPIFormat(config);
+
+    switch (apiFormat) {
+      case AIAPIFormat.anthropicMessages:
         // 获取 MCP 服务器 URL (如果配置支持 MCP)
         final mcpUrl = config.capabilities.supportsMCP
             ? dotenv.env['MCP_BASE_URL']
@@ -29,27 +30,65 @@ class AIServiceFactory {
         return ClaudeAdapter(
           apiKey: apiKey,
           modelId: config.modelId,
-          customApiUrl: apiUrl,
+          customApiUrl:
+              apiUrl ??
+              (config.provider == AIProvider.deepseek
+                  ? 'https://api.deepseek.com/anthropic'
+                  : null),
           mcpServerUrl: mcpUrl != null ? '$mcpUrl/mcp' : null,
           enableThinking: config.capabilities.enableThinking,
           thinkingBudgetTokens: config.capabilities.thinkingBudgetTokens,
         );
 
-      case AIProvider.openai:
+      case AIAPIFormat.responses:
+        return OpenAIAdapter(
+          apiKey: apiKey,
+          modelId: config.modelId,
+          customApiUrl:
+              apiUrl ??
+              (config.provider == AIProvider.deepseek
+                  ? 'https://api.deepseek.com'
+                  : null),
+          apiFormat: AIAPIFormat.responses,
+        );
+
+      case AIAPIFormat.chatCompletions:
+        if (config.provider == AIProvider.deepseek) {
+          return DeepSeekAdapter(
+            apiKey: apiKey,
+            modelId: config.modelId,
+            customApiUrl: apiUrl,
+            enableThinking: config.capabilities.enableThinking,
+          );
+        }
         return OpenAIAdapter(
           apiKey: apiKey,
           modelId: config.modelId,
           customApiUrl: apiUrl,
+          apiFormat: AIAPIFormat.chatCompletions,
         );
 
-      case AIProvider.deepseek:
-        return DeepSeekAdapter(
-          apiKey: apiKey,
-          modelId: config.modelId,
-          customApiUrl: apiUrl,
-          enableThinking: config.capabilities.enableThinking,
-        );
+      case AIAPIFormat.auto:
+        throw StateError('API format must be resolved before creating service');
     }
+  }
+
+  /// 自动模式优先采用服务商原生且模型覆盖最广的协议。
+  /// URL 中包含明确端点时尊重用户配置，方便接入兼容代理。
+  static AIAPIFormat resolveAPIFormat(AIModelConfig config) {
+    if (config.apiFormat != AIAPIFormat.auto) return config.apiFormat;
+
+    final url = config.customApiUrl?.toLowerCase() ?? '';
+    if (url.contains('/anthropic') || url.endsWith('/messages')) {
+      return AIAPIFormat.anthropicMessages;
+    }
+    if (url.endsWith('/responses') || url.contains('lljby.cn')) {
+      return AIAPIFormat.responses;
+    }
+    if (config.provider == AIProvider.claude) {
+      return AIAPIFormat.anthropicMessages;
+    }
+    return AIAPIFormat.chatCompletions;
   }
 
   /// 获取 API Key

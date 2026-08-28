@@ -25,7 +25,7 @@ class DeepSeekAdapter implements AIService {
     this.customApiUrl,
     this.enableThinking = false,
   }) : _dio = Dio() {
-    final baseUrl = customApiUrl ?? defaultApiUrl;
+    final baseUrl = _normalizeBaseUrl(customApiUrl ?? defaultApiUrl);
     _dio.options.baseUrl = baseUrl;
     _dio.options.headers = {
       'Authorization': 'Bearer $apiKey',
@@ -33,6 +33,15 @@ class DeepSeekAdapter implements AIService {
     };
     _dio.options.connectTimeout = const Duration(seconds: 30);
     _dio.options.receiveTimeout = const Duration(seconds: 300);
+  }
+
+  static String _normalizeBaseUrl(String url) {
+    var normalized = url.trim().replaceFirst(RegExp(r'/+$'), '');
+    const suffix = '/chat/completions';
+    if (normalized.toLowerCase().endsWith(suffix)) {
+      normalized = normalized.substring(0, normalized.length - suffix.length);
+    }
+    return normalized;
   }
 
   @override

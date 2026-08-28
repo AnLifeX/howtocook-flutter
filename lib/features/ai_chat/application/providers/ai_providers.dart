@@ -91,6 +91,7 @@ class AvailableModels extends _$AvailableModels {
       'useBuiltinKey': model.useBuiltinKey,
       'customApiUrl': model.customApiUrl,
       'customApiKey': model.customApiKey,
+      'apiFormat': model.apiFormat.wireValue,
       'isDefault': model.isDefault,
       'isBuiltin': model.isBuiltin,
       // 手动序列化嵌套的 capabilities 对象

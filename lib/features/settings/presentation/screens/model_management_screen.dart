@@ -220,6 +220,10 @@ class _ModelManagementScreenState extends ConsumerState<ModelManagementScreen> {
               children: [
                 _buildInfoTag(Icons.tag, 'ID: ${model.modelId}'),
                 _buildInfoTag(
+                  Icons.swap_horiz,
+                  _apiFormatLabel(model.apiFormat),
+                ),
+                _buildInfoTag(
                   Icons.key,
                   model.useBuiltinKey ? '内置 Key' : '自定义 Key',
                 ),
@@ -382,6 +386,7 @@ class _ModelFormSheetState extends ConsumerState<ModelFormSheet> {
   late final TextEditingController _contextWindowController;
 
   late AIProvider _provider;
+  late AIAPIFormat _apiFormat;
   late bool _supportsImageInput;
   late bool _supportsFileInput;
   late bool _supportsMCP;
@@ -407,6 +412,7 @@ class _ModelFormSheetState extends ConsumerState<ModelFormSheet> {
     super.initState();
     final initial = widget.initialModel;
     _provider = initial?.provider ?? AIProvider.deepseek; // 默认选择 DeepSeek
+    _apiFormat = initial?.apiFormat ?? AIAPIFormat.auto;
     _displayNameController = TextEditingController(
       text: initial?.displayName ?? '',
     );
@@ -510,11 +516,44 @@ class _ModelFormSheetState extends ConsumerState<ModelFormSheet> {
                   if (value == null) return;
                   setState(() {
                     _provider = value;
-                    _apiUrlController.text = _defaultApiUrl(value);
+                    if (!_availableAPIFormats(value).contains(_apiFormat)) {
+                      _apiFormat = AIAPIFormat.auto;
+                    }
+                    _apiUrlController.text = _defaultApiUrl(value, _apiFormat);
                   });
                   _invalidateValidation();
                   _handleModelIdentifierChanged(force: true);
                 },
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<AIAPIFormat>(
+                initialValue: _apiFormat,
+                decoration: const InputDecoration(labelText: 'API 格式'),
+                items: _availableAPIFormats(_provider)
+                    .map(
+                      (format) => DropdownMenuItem(
+                        value: format,
+                        child: Text(_apiFormatLabel(format)),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() {
+                    _apiFormat = value;
+                    _apiUrlController.text = _defaultApiUrl(_provider, value);
+                  });
+                  _invalidateValidation();
+                },
+              ),
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  _apiFormatHint(_provider, _apiFormat),
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
               ),
               const SizedBox(height: 16),
               TextFormField(
@@ -823,6 +862,7 @@ class _ModelFormSheetState extends ConsumerState<ModelFormSheet> {
       useBuiltinKey: false,
       customApiUrl: apiUrl.isEmpty ? null : apiUrl,
       customApiKey: apiKey.isEmpty ? null : apiKey,
+      apiFormat: _apiFormat,
       isDefault: existing?.isDefault ?? false,
       isBuiltin: false,
       capabilities: ModelCapabilities(
@@ -1052,7 +1092,18 @@ String _providerLabel(AIProvider provider) {
 }
 
 /// 获取服务商默认 API URL
-String _defaultApiUrl(AIProvider provider) {
+String _defaultApiUrl(
+  AIProvider provider, [
+  AIAPIFormat format = AIAPIFormat.auto,
+]) {
+  if (provider == AIProvider.deepseek) {
+    if (format == AIAPIFormat.responses) {
+      return 'https://api.deepseek.com';
+    }
+    if (format == AIAPIFormat.anthropicMessages) {
+      return 'https://api.deepseek.com/anthropic';
+    }
+  }
   switch (provider) {
     case AIProvider.claude:
       return 'https://api.anthropic.com/v1';
@@ -1060,5 +1111,47 @@ String _defaultApiUrl(AIProvider provider) {
       return 'https://api.openai.com/v1';
     case AIProvider.deepseek:
       return 'https://api.deepseek.com/v1';
+  }
+}
+
+String _apiFormatLabel(AIAPIFormat format) {
+  switch (format) {
+    case AIAPIFormat.auto:
+      return '自动（推荐）';
+    case AIAPIFormat.chatCompletions:
+      return 'Chat Completions';
+    case AIAPIFormat.responses:
+      return 'Responses';
+    case AIAPIFormat.anthropicMessages:
+      return 'Anthropic Messages';
+  }
+}
+
+String _apiFormatHint(AIProvider provider, AIAPIFormat format) {
+  if (format == AIAPIFormat.auto) {
+    return '按服务商和 API URL 自动选择；已有模型会继续使用原来的兼容格式。';
+  }
+  if (provider == AIProvider.deepseek && format == AIAPIFormat.responses) {
+    return 'DeepSeek 官方 Responses 当前仅支持 deepseek-v4-flash。';
+  }
+  if (provider == AIProvider.deepseek &&
+      format == AIAPIFormat.anthropicMessages) {
+    return '使用 DeepSeek 的 Anthropic 兼容接口（/anthropic/messages）。';
+  }
+  return '请求体、流式事件和工具调用都将按此协议解析。';
+}
+
+List<AIAPIFormat> _availableAPIFormats(AIProvider provider) {
+  switch (provider) {
+    case AIProvider.claude:
+      return const [AIAPIFormat.auto, AIAPIFormat.anthropicMessages];
+    case AIProvider.openai:
+      return const [
+        AIAPIFormat.auto,
+        AIAPIFormat.chatCompletions,
+        AIAPIFormat.responses,
+      ];
+    case AIProvider.deepseek:
+      return AIAPIFormat.values;
   }
 }

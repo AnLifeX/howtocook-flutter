@@ -21,6 +21,7 @@ class AIModelConfig with _$AIModelConfig {
     @Default(false) bool useBuiltinKey, // 兼容旧数据；新版本始终使用用户 Key
     String? customApiUrl, // 用户自定义 API 地址
     String? customApiKey, // 用户自定义 API Key
+    @Default(AIAPIFormat.auto) AIAPIFormat apiFormat, // 请求/响应协议
     @Default(false) bool isDefault, // 是否为默认模型
     @Default(false) bool isBuiltin, // 是否为内置模型（不可删除）
     // 模型能力（根据官方文档或验证结果填充）
@@ -48,6 +49,33 @@ enum AIProvider {
   openai,
   @JsonValue('deepseek')
   deepseek,
+}
+
+/// 模型接口协议。auto 会按服务商和 URL 选择兼容性最好的格式。
+enum AIAPIFormat {
+  @JsonValue('auto')
+  auto,
+  @JsonValue('chat_completions')
+  chatCompletions,
+  @JsonValue('responses')
+  responses,
+  @JsonValue('anthropic_messages')
+  anthropicMessages,
+}
+
+extension AIAPIFormatSerialization on AIAPIFormat {
+  String get wireValue {
+    switch (this) {
+      case AIAPIFormat.auto:
+        return 'auto';
+      case AIAPIFormat.chatCompletions:
+        return 'chat_completions';
+      case AIAPIFormat.responses:
+        return 'responses';
+      case AIAPIFormat.anthropicMessages:
+        return 'anthropic_messages';
+    }
+  }
 }
 
 /// 模型能力

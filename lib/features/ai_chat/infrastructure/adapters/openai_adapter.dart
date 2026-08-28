@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'dart:convert';
+import '../../domain/entities/ai_model_config.dart';
 import '../../domain/entities/chat_message.dart';
 import '../../domain/entities/ai_usage_metrics.dart';
 import '../../domain/services/ai_service.dart';
@@ -13,6 +14,7 @@ class OpenAIAdapter implements AIService {
   final String apiKey;
   final String modelId;
   final String? customApiUrl;
+  final AIAPIFormat apiFormat;
 
   /// 默认 OpenAI API 地址
   static const String defaultApiUrl = 'https://api.openai.com/v1';
@@ -21,8 +23,9 @@ class OpenAIAdapter implements AIService {
     required this.apiKey,
     required this.modelId,
     this.customApiUrl,
+    this.apiFormat = AIAPIFormat.auto,
   }) : _dio = Dio() {
-    final baseUrl = customApiUrl ?? defaultApiUrl;
+    final baseUrl = _normalizeBaseUrl(customApiUrl ?? defaultApiUrl);
     _dio.options.baseUrl = baseUrl;
     _dio.options.headers = {
       'Authorization': 'Bearer $apiKey',
@@ -31,6 +34,14 @@ class OpenAIAdapter implements AIService {
     _dio.options.connectTimeout = const Duration(seconds: 30);
     _dio.options.receiveTimeout = const Duration(seconds: 300);
   }
+
+  bool get _usesResponses =>
+      apiFormat == AIAPIFormat.responses ||
+      (apiFormat == AIAPIFormat.auto &&
+          ((customApiUrl?.toLowerCase().endsWith('/responses') ?? false) ||
+              (customApiUrl?.contains('lljby.cn') ?? false)));
+
+  String get _endpoint => _usesResponses ? '/responses' : '/chat/completions';
 
   @override
   Stream<String> sendMessage({
@@ -48,68 +59,40 @@ class OpenAIAdapter implements AIService {
         stream: true,
       );
 
-      // 检测是否为自定义API（如 code.lljby.cn），使用 /responses 而不是 /chat/completions
-      final endpoint =
-          (customApiUrl != null && customApiUrl!.contains('lljby.cn'))
-          ? '/responses'
-          : '/chat/completions';
-
       final response = await _dio.post(
-        endpoint,
+        _endpoint,
         data: requestData,
         options: Options(responseType: ResponseType.stream),
       );
 
-      final stream = response.data.stream;
-      final isResponsesEndpoint =
-          (customApiUrl != null && customApiUrl!.contains('lljby.cn'));
-
-      await for (final chunk in stream) {
-        final lines = utf8.decode(chunk).split('\n');
-        for (final line in lines) {
-          if (line.startsWith('data: ')) {
-            final data = line.substring(6).trim();
-            if (data == '[DONE]') continue;
-            if (data.isEmpty) continue;
-
-            try {
-              final json = jsonDecode(data);
-              final usage = _usageFromEvent(json);
-              if (usage != null) onUsage?.call(usage);
-
-              if (isResponsesEndpoint) {
-                // Responses API 格式: output数组中包含内容块
-                final output = json['output'] as List<dynamic>?;
-                if (output != null) {
-                  for (final block in output) {
-                    if (block is Map<String, dynamic>) {
-                      final type = block['type'] as String?;
-                      if (type == 'text') {
-                        final text = block['text'] as String?;
-                        if (text != null && text.isNotEmpty) {
-                          yield text;
-                        }
-                      }
-                    }
-                  }
-                }
-              } else {
-                // 标准 OpenAI 格式
-                final choices = json['choices'] as List<dynamic>?;
-                if (choices != null && choices.isNotEmpty) {
-                  final delta = choices[0]['delta'] as Map<String, dynamic>?;
-                  if (delta != null) {
-                    final content = delta['content'] as String?;
-                    if (content != null) {
-                      yield content;
-                    }
-                  }
-                }
+      var sseBuffer = '';
+      final reasoningBuffer = StringBuffer();
+      await for (final chunk in utf8.decoder.bind(
+        response.data.stream.cast<List<int>>(),
+      )) {
+        sseBuffer += chunk;
+        final lines = sseBuffer.split('\n');
+        sseBuffer = lines.removeLast();
+        for (final rawLine in lines) {
+          final data = _sseData(rawLine);
+          if (data == null) continue;
+          try {
+            final event = jsonDecode(data) as Map<String, dynamic>;
+            final usage = _usageFromEvent(event);
+            if (usage != null) onUsage?.call(usage);
+            final text = _usesResponses
+                ? _responsesTextDelta(event)
+                : _chatTextDelta(event);
+            if (text != null && text.isNotEmpty) yield text;
+            if (_usesResponses) {
+              final reasoning = _responsesReasoningDelta(event);
+              if (reasoning != null && reasoning.isNotEmpty) {
+                reasoningBuffer.write(reasoning);
+                onReasoningContent?.call(reasoningBuffer.toString());
               }
-            } catch (e) {
-              // 忽略解析错误，继续处理下一行
-              continue;
             }
+          } catch (_) {
+            continue;
           }
         }
       }
@@ -136,17 +119,14 @@ class OpenAIAdapter implements AIService {
         maxTokens,
         stream: true,
       );
-      final isResponsesEndpoint =
-          customApiUrl != null && customApiUrl!.contains('lljby.cn');
-      final endpoint = isResponsesEndpoint ? '/responses' : '/chat/completions';
-
       final response = await _dio.post(
-        endpoint,
+        _endpoint,
         data: requestData,
         options: Options(responseType: ResponseType.stream),
       );
 
       final textBuffer = StringBuffer();
+      final reasoningBuffer = StringBuffer();
       final toolCallAccumulators = <int, _ToolCallAccumulator>{};
       var sseBuffer = '';
 
@@ -168,20 +148,18 @@ class OpenAIAdapter implements AIService {
             final usage = _usageFromEvent(json);
             if (usage != null) onUsage?.call(usage);
 
-            if (isResponsesEndpoint) {
-              final output = json['output'] as List<dynamic>?;
-              if (output != null) {
-                for (final block in output) {
-                  if (block is Map<String, dynamic> &&
-                      block['type'] == 'text') {
-                    final text = block['text'] as String?;
-                    if (text != null && text.isNotEmpty) {
-                      textBuffer.write(text);
-                      if (onTextChunk != null) onTextChunk(text);
-                    }
-                  }
-                }
+            if (_usesResponses) {
+              final text = _responsesTextDelta(json);
+              if (text != null && text.isNotEmpty) {
+                textBuffer.write(text);
+                onTextChunk?.call(text);
               }
+              final reasoning = _responsesReasoningDelta(json);
+              if (reasoning != null && reasoning.isNotEmpty) {
+                reasoningBuffer.write(reasoning);
+                onReasoningContent?.call(reasoningBuffer.toString());
+              }
+              _accumulateResponsesToolCall(json, toolCallAccumulators);
             } else {
               final choices = json['choices'] as List<dynamic>?;
               if (choices == null || choices.isEmpty) continue;
@@ -305,25 +283,24 @@ class OpenAIAdapter implements AIService {
     int? maxTokens, {
     required bool stream,
   }) {
-    // 检测是否为 Responses API 端点
-    final isResponsesEndpoint =
-        customApiUrl != null && customApiUrl!.contains('lljby.cn');
-
-    if (isResponsesEndpoint) {
+    if (_usesResponses) {
       // Responses API 格式
       final requestData = <String, dynamic>{
         'model': modelId,
-        'input': messages.map(_convertMessageForResponses).toList(),
-        'stream': true, // Responses API 强制要求流式
+        'input': messages.expand(_convertMessageForResponses).toList(),
+        'stream': stream,
       };
 
-      // Responses API 不支持 max_tokens 参数
-
-      // 暂时禁用工具传递，先测试基本功能
-      // TODO: 调试代理 API 的工具格式要求
-      // if (tools != null && tools.isNotEmpty) {
-      //   requestData['tools'] = tools.map(_convertTool).toList();
-      // }
+      if (maxTokens != null) requestData['max_output_tokens'] = maxTokens;
+      if (tools != null && tools.isNotEmpty) {
+        requestData['tools'] = tools.map(_convertResponsesTool).toList();
+        requestData['tool_choice'] = 'auto';
+      }
+      if (customApiUrl == null ||
+          customApiUrl!.contains('openai.com') ||
+          customApiUrl!.contains('deepseek.com')) {
+        requestData['prompt_cache_key'] = 'howtocook-chat-v2';
+      }
 
       return requestData;
     }
@@ -353,20 +330,39 @@ class OpenAIAdapter implements AIService {
   }
 
   /// 转换消息格式（用于 Responses API）
-  Map<String, dynamic> _convertMessageForResponses(ChatMessage message) {
+  Iterable<Map<String, dynamic>> _convertMessageForResponses(
+    ChatMessage message,
+  ) sync* {
     final content = <Map<String, dynamic>>[];
 
     for (final item in message.content) {
       if (item is TextContent) {
-        content.add({'type': 'input_text', 'text': item.text});
+        content.add({
+          'type': message.role == MessageRole.assistant
+              ? 'output_text'
+              : 'input_text',
+          'text': item.text,
+        });
       } else if (item is ImageContent) {
         content.add({
           'type': 'input_image',
           'image_url':
               'data:${item.mimeType ?? 'image/jpeg'};base64,${item.data}',
         });
+      } else if (item is ToolUseContent) {
+        yield {
+          'type': 'function_call',
+          'call_id': item.toolUseId,
+          'name': item.name,
+          'arguments': jsonEncode(item.input),
+        };
+      } else if (item is ToolResultContent) {
+        yield {
+          'type': 'function_call_output',
+          'call_id': item.toolUseId,
+          'output': jsonEncode(item.result),
+        };
       }
-      // TODO: 处理工具调用内容
     }
 
     if (message.runtimeContext != null &&
@@ -377,7 +373,9 @@ class OpenAIAdapter implements AIService {
       });
     }
 
-    return {'role': _convertRole(message.role), 'content': content};
+    if (content.isNotEmpty) {
+      yield {'role': _convertRole(message.role), 'content': content};
+    }
   }
 
   /// 转换消息格式（用于标准 OpenAI API）
@@ -460,6 +458,87 @@ class OpenAIAdapter implements AIService {
         'parameters': tool['input_schema'] ?? tool['parameters'],
       },
     };
+  }
+
+  Map<String, dynamic> _convertResponsesTool(Map<String, dynamic> tool) {
+    return {
+      'type': 'function',
+      'name': tool['name'],
+      'description': tool['description'],
+      'parameters': tool['input_schema'] ?? tool['parameters'],
+    };
+  }
+
+  static String _normalizeBaseUrl(String url) {
+    var normalized = url.trim().replaceFirst(RegExp(r'/+$'), '');
+    for (final suffix in const ['/chat/completions', '/responses']) {
+      if (normalized.toLowerCase().endsWith(suffix)) {
+        normalized = normalized.substring(0, normalized.length - suffix.length);
+        break;
+      }
+    }
+    return normalized;
+  }
+
+  String? _sseData(String rawLine) {
+    final line = rawLine.trim();
+    if (!line.startsWith('data:')) return null;
+    final data = line.substring('data:'.length).trim();
+    if (data.isEmpty || data == '[DONE]') return null;
+    return data;
+  }
+
+  String? _chatTextDelta(Map<String, dynamic> event) {
+    final choices = event['choices'] as List<dynamic>?;
+    if (choices == null || choices.isEmpty || choices.first is! Map) {
+      return null;
+    }
+    final choice = Map<String, dynamic>.from(choices.first as Map);
+    final delta = choice['delta'];
+    if (delta is! Map) return null;
+    return Map<String, dynamic>.from(delta)['content'] as String?;
+  }
+
+  String? _responsesTextDelta(Map<String, dynamic> event) {
+    if (event['type'] == 'response.output_text.delta') {
+      return event['delta'] as String?;
+    }
+    return null;
+  }
+
+  String? _responsesReasoningDelta(Map<String, dynamic> event) {
+    if (event['type'] == 'response.reasoning_text.delta') {
+      return event['delta'] as String?;
+    }
+    return null;
+  }
+
+  void _accumulateResponsesToolCall(
+    Map<String, dynamic> event,
+    Map<int, _ToolCallAccumulator> accumulators,
+  ) {
+    final type = event['type'] as String?;
+    final index = (event['output_index'] as num?)?.toInt() ?? 0;
+    if (type == 'response.output_item.added' ||
+        type == 'response.output_item.done') {
+      final rawItem = event['item'];
+      if (rawItem is! Map) return;
+      final item = Map<String, dynamic>.from(rawItem);
+      if (item['type'] != 'function_call') return;
+      final acc = accumulators.putIfAbsent(index, () => _ToolCallAccumulator());
+      acc.id = item['call_id'] as String? ?? acc.id;
+      acc.name = item['name'] as String? ?? acc.name;
+      final arguments = item['arguments'] as String?;
+      if (arguments != null && arguments.isNotEmpty && acc.argsBuffer.isEmpty) {
+        acc.argsBuffer.write(arguments);
+      }
+      return;
+    }
+    if (type == 'response.function_call_arguments.delta') {
+      final acc = accumulators.putIfAbsent(index, () => _ToolCallAccumulator());
+      final delta = event['delta'] as String?;
+      if (delta != null) acc.argsBuffer.write(delta);
+    }
   }
 
   AIUsageMetrics? _usageFromEvent(dynamic raw) {
