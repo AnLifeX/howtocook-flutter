@@ -383,6 +383,14 @@ class DeepSeekAdapter implements AIService {
     return requestData;
   }
 
+  @visibleForTesting
+  Map<String, dynamic> buildRequestForTesting({
+    required List<ChatMessage> messages,
+    List<Map<String, dynamic>>? tools,
+    int? maxTokens,
+    bool stream = true,
+  }) => _buildRequest(messages, tools, maxTokens, stream: stream);
+
   /// 转换消息格式
   Map<String, dynamic> _convertMessage(ChatMessage message) {
     final textParts = <String>[];

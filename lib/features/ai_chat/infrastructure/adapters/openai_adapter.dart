@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import '../../domain/entities/ai_model_config.dart';
 import '../../domain/entities/chat_message.dart';
 import '../../domain/entities/ai_usage_metrics.dart';
@@ -296,9 +297,9 @@ class OpenAIAdapter implements AIService {
         requestData['tools'] = tools.map(_convertResponsesTool).toList();
         requestData['tool_choice'] = 'auto';
       }
-      if (customApiUrl == null ||
-          customApiUrl!.contains('openai.com') ||
-          customApiUrl!.contains('deepseek.com')) {
+      // prompt_cache_key 是 OpenAI 扩展字段；DeepSeek 自动缓存公共前缀，
+      // 官方 Responses 端点不需要也不应接收该字段。
+      if (customApiUrl == null || customApiUrl!.contains('openai.com')) {
         requestData['prompt_cache_key'] = 'howtocook-chat-v2';
       }
 
@@ -328,6 +329,14 @@ class OpenAIAdapter implements AIService {
 
     return requestData;
   }
+
+  @visibleForTesting
+  Map<String, dynamic> buildRequestForTesting({
+    required List<ChatMessage> messages,
+    List<Map<String, dynamic>>? tools,
+    int? maxTokens,
+    bool stream = true,
+  }) => _buildRequest(messages, tools, maxTokens, stream: stream);
 
   /// 转换消息格式（用于 Responses API）
   Iterable<Map<String, dynamic>> _convertMessageForResponses(

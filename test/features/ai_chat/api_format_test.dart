@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:howtocook/features/ai_chat/domain/entities/ai_model_config.dart';
+import 'package:howtocook/features/ai_chat/domain/entities/chat_message.dart';
 import 'package:howtocook/features/ai_chat/infrastructure/adapters/claude_adapter.dart';
 import 'package:howtocook/features/ai_chat/infrastructure/adapters/deepseek_adapter.dart';
 import 'package:howtocook/features/ai_chat/infrastructure/adapters/openai_adapter.dart';
@@ -67,5 +68,93 @@ void main() {
       ),
       AIAPIFormat.anthropicMessages,
     );
+  });
+
+  group('DeepSeek v4 flash tool protocol compatibility', () {
+    final tools = <Map<String, dynamic>>[
+      {
+        'name': 'searchRecipes',
+        'description': '搜索菜谱',
+        'input_schema': {
+          'type': 'object',
+          'properties': {
+            'query': {'type': 'string'},
+          },
+        },
+      },
+    ];
+    final history = <ChatMessage>[
+      ChatMessage(
+        id: 'system',
+        role: MessageRole.system,
+        content: const [MessageContent.text(text: '你是烹饪助手')],
+        timestamp: DateTime.fromMillisecondsSinceEpoch(0),
+      ),
+      ChatMessage(
+        id: 'assistant-call',
+        role: MessageRole.assistant,
+        content: const [
+          MessageContent.toolUse(
+            toolUseId: 'call_1',
+            name: 'searchRecipes',
+            input: {'query': '鸡蛋'},
+          ),
+        ],
+        timestamp: DateTime.fromMillisecondsSinceEpoch(1),
+      ),
+      ChatMessage(
+        id: 'tool-result',
+        role: MessageRole.user,
+        content: const [
+          MessageContent.toolResult(
+            toolUseId: 'call_1',
+            result: {'success': true, 'count': 1},
+          ),
+        ],
+        timestamp: DateTime.fromMillisecondsSinceEpoch(2),
+      ),
+    ];
+
+    test('Chat Completions encodes definitions, calls and results', () {
+      final adapter = DeepSeekAdapter(
+        apiKey: 'test-key',
+        modelId: 'deepseek-v4-flash',
+      );
+      final request = adapter.buildRequestForTesting(
+        messages: history,
+        tools: tools,
+      );
+
+      expect(request['tools'][0]['function']['name'], 'searchRecipes');
+      expect(request['messages'][1]['tool_calls'][0]['id'], 'call_1');
+      expect(request['messages'][2]['role'], 'tool');
+      expect(request['messages'][2]['tool_call_id'], 'call_1');
+      expect(request['thinking']['type'], 'disabled');
+    });
+
+    test('Responses encodes flat functions and function_call_output', () {
+      final adapter = OpenAIAdapter(
+        apiKey: 'test-key',
+        modelId: 'deepseek-v4-flash',
+        customApiUrl: 'https://api.deepseek.com',
+        apiFormat: AIAPIFormat.responses,
+      );
+      final request = adapter.buildRequestForTesting(
+        messages: history,
+        tools: tools,
+      );
+      final input = request['input'] as List<dynamic>;
+
+      expect(request['tools'][0]['name'], 'searchRecipes');
+      expect(
+        input.where((item) => item['type'] == 'function_call'),
+        hasLength(1),
+      );
+      expect(
+        input.where((item) => item['type'] == 'function_call_output'),
+        hasLength(1),
+      );
+      expect(request, isNot(contains('prompt_cache_key')));
+    });
   });
 }
