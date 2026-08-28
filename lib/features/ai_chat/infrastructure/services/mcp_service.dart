@@ -23,7 +23,12 @@ class MCPService {
   ];
 
   MCPService() : _dio = Dio() {
-    baseUrl = dotenv.env['MCP_BASE_URL']!;
+    try {
+      baseUrl = dotenv.env['MCP_BASE_URL']?.trim() ?? '';
+    } catch (_) {
+      // 单元测试或极早启动阶段 dotenv 可能尚未初始化。
+      baseUrl = '';
+    }
     _dio.options.baseUrl = baseUrl;
     _dio.options.connectTimeout = const Duration(seconds: 30);
     _dio.options.receiveTimeout = const Duration(seconds: 30);
@@ -34,6 +39,8 @@ class MCPService {
     _catalogDio.options.connectTimeout = const Duration(seconds: 8);
     _catalogDio.options.receiveTimeout = const Duration(seconds: 12);
   }
+
+  bool get isConfigured => baseUrl.isNotEmpty;
 
   Map<String, dynamic> _asJsonMap(dynamic value) {
     if (value is Map<String, dynamic>) return value;
@@ -120,6 +127,9 @@ class MCPService {
     Map<String, dynamic> arguments,
   ) async {
     try {
+      if (!isConfigured) {
+        throw StateError('未配置 MCP_BASE_URL，当前云端工具不可用');
+      }
       _requestId++;
 
       // JSON-RPC 2.0 请求格式

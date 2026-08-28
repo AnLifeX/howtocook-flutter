@@ -132,19 +132,13 @@ class RecipeRepositoryImpl implements RecipeRepository {
   @override
   Future<List<Recipe>> getRecipesByCategory(String category) async {
     try {
-      // 1. 从内置数据加载该分类的菜谱
-      final recipes = await _bundledLoader.loadRecipesByCategory(category);
-
-      // 2. 合并收藏和笔记信息
-      final List<Recipe> result = [];
-      for (final recipe in recipes) {
-        final isFav = await isFavorite(recipe.id);
-        final note = await getUserNote(recipe.id);
-
-        result.add(recipe.copyWith(isFavorite: isFav, userNote: note));
-      }
-
-      return result;
+      // 必须从合并后的菜谱库筛选，否则用户新增或修改的菜谱会被漏掉。
+      final normalized = category.trim().toLowerCase();
+      final recipes = await getAllRecipes();
+      return recipes.where((recipe) {
+        return recipe.category.toLowerCase() == normalized ||
+            recipe.categoryName.toLowerCase() == normalized;
+      }).toList();
     } catch (e) {
       throw Exception('Failed to get recipes by category $category: $e');
     }
