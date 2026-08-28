@@ -21,6 +21,7 @@
 - **工具权限控制**：模型只会收到当前数据模式允许的工具，执行层再次校验工具名；云端模式无法调用本地收藏等本地专属能力。
 - **本地分类漏掉自建菜谱**：分类查询改为从合并后的本地菜谱库筛选，用户添加或 AI 生成后保存的菜谱可被 AI 正确读取。
 - **DeepSeek V4 工具兼容**：补齐 `deepseek-v4-flash` 在 Chat Completions 与 Responses 两种格式下的工具定义、调用结果和多轮回传测试，并移除 DeepSeek Responses 不支持的 OpenAI 专属缓存参数。
+- **Release 依赖下载稳定性**：Android 构建恢复官方 Google Maven 与 Maven Central 优先，阿里云镜像仅作回退，避免镜像偶发 5xx 阻断发布构建。
 
 ## [0.4.5] - 2026-08-28
 
