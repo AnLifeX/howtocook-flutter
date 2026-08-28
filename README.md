@@ -36,7 +36,7 @@
 
 ## 🧱 技术栈
 
-- Flutter ≥ 3.9.2 / Dart ≥ 3.9.2
+- Flutter 3.35.6 / Dart ≥ 3.9.2（CI 与本地使用同一固定 Flutter 版本）
 - 状态管理：flutter_riverpod 2.x + riverpod_generator
 - 路由：go_router
 - 存储：hive / sqflite / path_provider
