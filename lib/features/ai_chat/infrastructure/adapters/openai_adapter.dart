@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'dart:convert';
 import '../../domain/entities/chat_message.dart';
+import '../../domain/entities/ai_usage_metrics.dart';
 import '../../domain/services/ai_service.dart';
 
 /// OpenAI API 适配器
@@ -37,25 +38,31 @@ class OpenAIAdapter implements AIService {
     List<Map<String, dynamic>>? tools,
     int? maxTokens,
     void Function(String reasoningContent)? onReasoningContent,
+    void Function(AIUsageMetrics usage)? onUsage,
   }) async* {
     try {
-      final requestData = _buildRequest(messages, tools, maxTokens, stream: true);
+      final requestData = _buildRequest(
+        messages,
+        tools,
+        maxTokens,
+        stream: true,
+      );
 
       // 检测是否为自定义API（如 code.lljby.cn），使用 /responses 而不是 /chat/completions
-      final endpoint = (customApiUrl != null && customApiUrl!.contains('lljby.cn'))
+      final endpoint =
+          (customApiUrl != null && customApiUrl!.contains('lljby.cn'))
           ? '/responses'
           : '/chat/completions';
 
       final response = await _dio.post(
         endpoint,
         data: requestData,
-        options: Options(
-          responseType: ResponseType.stream,
-        ),
+        options: Options(responseType: ResponseType.stream),
       );
 
       final stream = response.data.stream;
-      final isResponsesEndpoint = (customApiUrl != null && customApiUrl!.contains('lljby.cn'));
+      final isResponsesEndpoint =
+          (customApiUrl != null && customApiUrl!.contains('lljby.cn'));
 
       await for (final chunk in stream) {
         final lines = utf8.decode(chunk).split('\n');
@@ -67,6 +74,8 @@ class OpenAIAdapter implements AIService {
 
             try {
               final json = jsonDecode(data);
+              final usage = _usageFromEvent(json);
+              if (usage != null) onUsage?.call(usage);
 
               if (isResponsesEndpoint) {
                 // Responses API 格式: output数组中包含内容块
@@ -118,9 +127,15 @@ class OpenAIAdapter implements AIService {
     int? maxTokens,
     void Function(String textChunk)? onTextChunk,
     void Function(String reasoningContent)? onReasoningContent,
+    void Function(AIUsageMetrics usage)? onUsage,
   }) async {
     try {
-      final requestData = _buildRequest(messages, tools, maxTokens, stream: true);
+      final requestData = _buildRequest(
+        messages,
+        tools,
+        maxTokens,
+        stream: true,
+      );
       final isResponsesEndpoint =
           customApiUrl != null && customApiUrl!.contains('lljby.cn');
       final endpoint = isResponsesEndpoint ? '/responses' : '/chat/completions';
@@ -135,8 +150,9 @@ class OpenAIAdapter implements AIService {
       final toolCallAccumulators = <int, _ToolCallAccumulator>{};
       var sseBuffer = '';
 
-      await for (final chunk
-          in utf8.decoder.bind(response.data.stream.cast<List<int>>())) {
+      await for (final chunk in utf8.decoder.bind(
+        response.data.stream.cast<List<int>>(),
+      )) {
         sseBuffer += chunk;
         final lines = sseBuffer.split('\n');
         sseBuffer = lines.removeLast();
@@ -149,6 +165,8 @@ class OpenAIAdapter implements AIService {
 
           try {
             final json = jsonDecode(data) as Map<String, dynamic>;
+            final usage = _usageFromEvent(json);
+            if (usage != null) onUsage?.call(usage);
 
             if (isResponsesEndpoint) {
               final output = json['output'] as List<dynamic>?;
@@ -182,7 +200,9 @@ class OpenAIAdapter implements AIService {
                   if (entry is! Map<String, dynamic>) continue;
                   final index = (entry['index'] as num?)?.toInt() ?? 0;
                   final acc = toolCallAccumulators.putIfAbsent(
-                      index, () => _ToolCallAccumulator());
+                    index,
+                    () => _ToolCallAccumulator(),
+                  );
                   final id = entry['id'] as String?;
                   if (id != null && id.isNotEmpty) acc.id = id;
                   final fn = entry['function'] as Map<String, dynamic>?;
@@ -219,11 +239,13 @@ class OpenAIAdapter implements AIService {
         } catch (_) {
           input = <String, dynamic>{};
         }
-        messageContent.add(MessageContent.toolUse(
-          toolUseId: acc.id!,
-          name: acc.name!,
-          input: input,
-        ));
+        messageContent.add(
+          MessageContent.toolUse(
+            toolUseId: acc.id!,
+            name: acc.name!,
+            input: input,
+          ),
+        );
       }
 
       if (messageContent.isEmpty) {
@@ -270,7 +292,8 @@ class OpenAIAdapter implements AIService {
       'provider': 'openai',
       'model_id': modelId,
       'supports_streaming': true,
-      'supports_vision': modelId.contains('gpt-4') && modelId.contains('vision'),
+      'supports_vision':
+          modelId.contains('gpt-4') && modelId.contains('vision'),
       'supports_tools': true,
     };
   }
@@ -283,7 +306,8 @@ class OpenAIAdapter implements AIService {
     required bool stream,
   }) {
     // 检测是否为 Responses API 端点
-    final isResponsesEndpoint = customApiUrl != null && customApiUrl!.contains('lljby.cn');
+    final isResponsesEndpoint =
+        customApiUrl != null && customApiUrl!.contains('lljby.cn');
 
     if (isResponsesEndpoint) {
       // Responses API 格式
@@ -309,7 +333,12 @@ class OpenAIAdapter implements AIService {
       'model': modelId,
       'messages': messages.map(_convertMessage).toList(),
       'stream': stream,
+      if (stream) 'stream_options': {'include_usage': true},
     };
+
+    if (customApiUrl == null || customApiUrl!.contains('openai.com')) {
+      requestData['prompt_cache_key'] = 'howtocook-chat-v2';
+    }
 
     if (maxTokens != null) {
       requestData['max_tokens'] = maxTokens;
@@ -329,23 +358,26 @@ class OpenAIAdapter implements AIService {
 
     for (final item in message.content) {
       if (item is TextContent) {
-        content.add({
-          'type': 'input_text',
-          'text': item.text,
-        });
+        content.add({'type': 'input_text', 'text': item.text});
       } else if (item is ImageContent) {
         content.add({
           'type': 'input_image',
-          'image_url': 'data:${item.mimeType ?? 'image/jpeg'};base64,${item.data}',
+          'image_url':
+              'data:${item.mimeType ?? 'image/jpeg'};base64,${item.data}',
         });
       }
       // TODO: 处理工具调用内容
     }
 
-    return {
-      'role': _convertRole(message.role),
-      'content': content,
-    };
+    if (message.runtimeContext != null &&
+        message.runtimeContext!.trim().isNotEmpty) {
+      content.add({
+        'type': 'input_text',
+        'text': message.runtimeContext!.trim(),
+      });
+    }
+
+    return {'role': _convertRole(message.role), 'content': content};
   }
 
   /// 转换消息格式（用于标准 OpenAI API）
@@ -367,10 +399,7 @@ class OpenAIAdapter implements AIService {
         toolCalls.add({
           'id': item.toolUseId,
           'type': 'function',
-          'function': {
-            'name': item.name,
-            'arguments': jsonEncode(item.input),
-          },
+          'function': {'name': item.name, 'arguments': jsonEncode(item.input)},
         });
       } else if (item is ToolResultContent) {
         return {
@@ -379,6 +408,11 @@ class OpenAIAdapter implements AIService {
           'content': jsonEncode(item.result),
         };
       }
+    }
+
+    if (message.runtimeContext != null &&
+        message.runtimeContext!.trim().isNotEmpty) {
+      content.add(message.runtimeContext!.trim());
     }
 
     if (toolCalls.isNotEmpty) {
@@ -402,10 +436,7 @@ class OpenAIAdapter implements AIService {
       return c;
     }).toList();
 
-    return {
-      'role': _convertRole(message.role),
-      'content': formatted,
-    };
+    return {'role': _convertRole(message.role), 'content': formatted};
   }
 
   /// 转换角色
@@ -429,6 +460,34 @@ class OpenAIAdapter implements AIService {
         'parameters': tool['input_schema'] ?? tool['parameters'],
       },
     };
+  }
+
+  AIUsageMetrics? _usageFromEvent(dynamic raw) {
+    if (raw is! Map) return null;
+    final event = Map<String, dynamic>.from(raw);
+    dynamic usageRaw = event['usage'];
+    if (usageRaw == null && event['response'] is Map) {
+      usageRaw = (event['response'] as Map)['usage'];
+    }
+    if (usageRaw is! Map) return null;
+    final usage = Map<String, dynamic>.from(usageRaw);
+    final detailsRaw =
+        usage['prompt_tokens_details'] ?? usage['input_tokens_details'];
+    final details = detailsRaw is Map
+        ? Map<String, dynamic>.from(detailsRaw)
+        : const <String, dynamic>{};
+    int value(Map<String, dynamic> map, String key) =>
+        (map[key] as num?)?.toInt() ?? 0;
+    return AIUsageMetrics(
+      inputTokens: value(usage, 'prompt_tokens') != 0
+          ? value(usage, 'prompt_tokens')
+          : value(usage, 'input_tokens'),
+      outputTokens: value(usage, 'completion_tokens') != 0
+          ? value(usage, 'completion_tokens')
+          : value(usage, 'output_tokens'),
+      cacheReadTokens: value(details, 'cached_tokens'),
+      cacheWriteTokens: value(details, 'cache_write_tokens'),
+    );
   }
 
   /// 处理 Dio 异常

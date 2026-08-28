@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../../domain/entities/chat_message.dart';
+import '../../domain/entities/ai_usage_metrics.dart';
 import '../../domain/services/ai_service.dart';
 
 /// Claude API 适配器
@@ -57,9 +58,15 @@ class ClaudeAdapter implements AIService {
     List<Map<String, dynamic>>? tools,
     int? maxTokens,
     void Function(String reasoningContent)? onReasoningContent,
+    void Function(AIUsageMetrics usage)? onUsage,
   }) async* {
     try {
-      final requestData = _buildRequest(messages, tools, maxTokens, stream: true);
+      final requestData = _buildRequest(
+        messages,
+        tools,
+        maxTokens,
+        stream: true,
+      );
 
       // 详细调试日志
       final requestBody = jsonEncode(requestData);
@@ -67,20 +74,22 @@ class ClaudeAdapter implements AIService {
       debugPrint('  URL: ${_dio.options.baseUrl}/messages');
       debugPrint('  Headers: ${_dio.options.headers}');
       debugPrint('  Body length: ${requestBody.length} bytes');
-      debugPrint('  Body (first 2000 chars): ${requestBody.substring(0, 2000.clamp(0, requestBody.length))}...');
+      debugPrint(
+        '  Body (first 2000 chars): ${requestBody.substring(0, 2000.clamp(0, requestBody.length))}...',
+      );
 
       // 如果有工具，单独打印工具定义
       if (requestData['tools'] != null) {
         final toolsJson = jsonEncode(requestData['tools']);
-        debugPrint('  Tools (first 1000 chars): ${toolsJson.substring(0, 1000.clamp(0, toolsJson.length))}...');
+        debugPrint(
+          '  Tools (first 1000 chars): ${toolsJson.substring(0, 1000.clamp(0, toolsJson.length))}...',
+        );
       }
 
       final response = await _dio.post(
         '/messages',
         data: requestData,
-        options: Options(
-          responseType: ResponseType.stream,
-        ),
+        options: Options(responseType: ResponseType.stream),
       );
 
       debugPrint('✅ Claude API Response:');
@@ -97,8 +106,11 @@ class ClaudeAdapter implements AIService {
         final lines = utf8.decode(chunk).split('\n');
         for (final line in lines) {
           // 调试：打印所有 SSE 事件行
-          if (line.trim().isNotEmpty && (line.startsWith('event:') || line.startsWith('data:'))) {
-            debugPrint('📨 SSE chunk #$chunkCount: ${line.substring(0, line.length.clamp(0, 200))}${line.length > 200 ? '...' : ''}');
+          if (line.trim().isNotEmpty &&
+              (line.startsWith('event:') || line.startsWith('data:'))) {
+            debugPrint(
+              '📨 SSE chunk #$chunkCount: ${line.substring(0, line.length.clamp(0, 200))}${line.length > 200 ? '...' : ''}',
+            );
           }
 
           if (line.startsWith('data: ')) {
@@ -110,16 +122,21 @@ class ClaudeAdapter implements AIService {
 
             try {
               final json = jsonDecode(data);
+              final usage = _usageFromEvent(json);
+              if (usage != null) onUsage?.call(usage);
               final type = json['type'] as String?;
 
               debugPrint('📋 Event type: $type');
 
               // 处理内容块开始
               if (type == 'content_block_start') {
-                final contentBlock = json['content_block'] as Map<String, dynamic>?;
+                final contentBlock =
+                    json['content_block'] as Map<String, dynamic>?;
                 if (contentBlock != null) {
                   currentBlockType = contentBlock['type'] as String?;
-                  debugPrint('📦 Content block started: type=$currentBlockType');
+                  debugPrint(
+                    '📦 Content block started: type=$currentBlockType',
+                  );
                   if (currentBlockType == 'thinking') {
                     debugPrint('🧠 Thinking block detected!');
                   }
@@ -140,7 +157,9 @@ class ClaudeAdapter implements AIService {
                     // 处理 Claude Extended Thinking
                     final thinking = delta['thinking'] as String?;
                     if (thinking != null) {
-                      debugPrint('🧠 Thinking delta: ${thinking.substring(0, thinking.length.clamp(0, 50))}...');
+                      debugPrint(
+                        '🧠 Thinking delta: ${thinking.substring(0, thinking.length.clamp(0, 50))}...',
+                      );
                       reasoningBuffer.write(thinking);
                       // 实时回调推理内容
                       if (onReasoningContent != null) {
@@ -173,7 +192,9 @@ class ClaudeAdapter implements AIService {
       debugPrint('🏁 Stream finished, total chunks: $chunkCount');
     } on DioException catch (e) {
       // 如果是400/404等错误，尝试读取ResponseBody
-      debugPrint('🔍 Checking response data type: ${e.response?.data.runtimeType}');
+      debugPrint(
+        '🔍 Checking response data type: ${e.response?.data.runtimeType}',
+      );
       if (e.response != null && e.response!.data is ResponseBody) {
         debugPrint('📖 Attempting to read ResponseBody...');
         try {
@@ -184,13 +205,17 @@ class ClaudeAdapter implements AIService {
           }
           final errorText = utf8.decode(chunks);
           debugPrint('  Response Data (from stream): $errorText');
-          throw Exception('Claude API error (${e.response!.statusCode}): $errorText');
+          throw Exception(
+            'Claude API error (${e.response!.statusCode}): $errorText',
+          );
         } catch (readError) {
           debugPrint('❌ Failed to read ResponseBody: $readError');
           // 如果读取失败，使用原来的错误处理
         }
       } else {
-        debugPrint('⚠️  Response data is not ResponseBody, skipping stream read');
+        debugPrint(
+          '⚠️  Response data is not ResponseBody, skipping stream read',
+        );
       }
       throw _handleDioException(e);
     } catch (e) {
@@ -205,16 +230,20 @@ class ClaudeAdapter implements AIService {
     int? maxTokens,
     void Function(String textChunk)? onTextChunk,
     void Function(String reasoningContent)? onReasoningContent,
+    void Function(AIUsageMetrics usage)? onUsage,
   }) async {
     try {
-      final requestData = _buildRequest(messages, tools, maxTokens, stream: true);
+      final requestData = _buildRequest(
+        messages,
+        tools,
+        maxTokens,
+        stream: true,
+      );
 
       final response = await _dio.post(
         '/messages',
         data: requestData,
-        options: Options(
-          responseType: ResponseType.stream,
-        ),
+        options: Options(responseType: ResponseType.stream),
       );
 
       // 解析完整的流式响应，包括工具调用和推理内容
@@ -222,6 +251,7 @@ class ClaudeAdapter implements AIService {
         response.data.stream,
         onTextChunk: onTextChunk,
         onReasoningContent: onReasoningContent,
+        onUsage: onUsage,
       );
 
       return ChatMessage(
@@ -243,6 +273,7 @@ class ClaudeAdapter implements AIService {
     Stream<List<int>> stream, {
     void Function(String textChunk)? onTextChunk,
     void Function(String reasoningContent)? onReasoningContent,
+    void Function(AIUsageMetrics usage)? onUsage,
   }) async {
     String messageId = DateTime.now().toString();
     final contentBlocks = <_ContentBlock>[];
@@ -259,6 +290,8 @@ class ClaudeAdapter implements AIService {
 
         try {
           final json = jsonDecode(data);
+          final usage = _usageFromEvent(json);
+          if (usage != null) onUsage?.call(usage);
           final type = json['type'] as String?;
 
           switch (type) {
@@ -270,16 +303,23 @@ class ClaudeAdapter implements AIService {
               break;
 
             case 'content_block_start':
-              final contentBlock = json['content_block'] as Map<String, dynamic>?;
+              final contentBlock =
+                  json['content_block'] as Map<String, dynamic>?;
               if (contentBlock != null) {
                 final blockType = contentBlock['type'] as String?;
                 debugPrint('📦 Content block started: type=$blockType');
                 if (blockType == 'text') {
-                  currentBlock = _ContentBlock(type: 'text', textBuffer: StringBuffer());
+                  currentBlock = _ContentBlock(
+                    type: 'text',
+                    textBuffer: StringBuffer(),
+                  );
                 } else if (blockType == 'thinking') {
                   // Claude Extended Thinking
                   debugPrint('🧠 Thinking block detected!');
-                  currentBlock = _ContentBlock(type: 'thinking', textBuffer: StringBuffer());
+                  currentBlock = _ContentBlock(
+                    type: 'thinking',
+                    textBuffer: StringBuffer(),
+                  );
                 } else if (blockType == 'tool_use') {
                   currentBlock = _ContentBlock(
                     type: 'tool_use',
@@ -308,7 +348,9 @@ class ClaudeAdapter implements AIService {
                   // Claude Extended Thinking 增量
                   final thinking = delta['thinking'] as String?;
                   if (thinking != null) {
-                    debugPrint('🧠 Thinking delta: ${thinking.substring(0, thinking.length.clamp(0, 50))}...');
+                    debugPrint(
+                      '🧠 Thinking delta: ${thinking.substring(0, thinking.length.clamp(0, 50))}...',
+                    );
                     currentBlock.textBuffer?.write(thinking);
                     reasoningBuffer.write(thinking);
                     // 实时回调推理内容
@@ -357,11 +399,13 @@ class ClaudeAdapter implements AIService {
         try {
           final inputJson = block.inputJsonBuffer!.toString();
           final input = jsonDecode(inputJson) as Map<String, dynamic>;
-          content.add(MessageContent.toolUse(
-            toolUseId: block.toolUseId!,
-            name: block.toolName!,
-            input: input,
-          ));
+          content.add(
+            MessageContent.toolUse(
+              toolUseId: block.toolUseId!,
+              name: block.toolName!,
+              input: input,
+            ),
+          );
         } catch (e) {
           debugPrint('⚠️  Failed to parse tool input JSON: $e');
         }
@@ -371,7 +415,9 @@ class ClaudeAdapter implements AIService {
     return {
       'id': messageId,
       'content': content,
-      'reasoningContent': reasoningBuffer.isNotEmpty ? reasoningBuffer.toString() : null,
+      'reasoningContent': reasoningBuffer.isNotEmpty
+          ? reasoningBuffer.toString()
+          : null,
     };
   }
 
@@ -422,10 +468,7 @@ class ClaudeAdapter implements AIService {
       if (msg.role == MessageRole.system) {
         // 提取所有文本内容并转换为 system 块
         for (final content in msg.content.whereType<TextContent>()) {
-          systemBlocks.add({
-            'type': 'text',
-            'text': content.text,
-          });
+          systemBlocks.add({'type': 'text', 'text': content.text});
         }
       } else {
         userMessages.add(msg);
@@ -438,6 +481,12 @@ class ClaudeAdapter implements AIService {
       'max_tokens': maxTokens ?? 4096,
       'stream': stream,
     };
+
+    final isOfficialApi =
+        customApiUrl == null || customApiUrl!.contains('anthropic.com');
+    if (isOfficialApi) {
+      requestData['cache_control'] = {'type': 'ephemeral'};
+    }
 
     if (systemBlocks.isNotEmpty) {
       requestData['system'] = systemBlocks;
@@ -454,36 +503,35 @@ class ClaudeAdapter implements AIService {
       if (currentMaxTokens < thinkingBudgetTokens + 4096) {
         requestData['max_tokens'] = thinkingBudgetTokens + 4096;
       }
-      debugPrint('🧠 Extended Thinking enabled with budget: $thinkingBudgetTokens tokens');
+      debugPrint(
+        '🧠 Extended Thinking enabled with budget: $thinkingBudgetTokens tokens',
+      );
 
       // 启用思考链时，使用 XML 格式工具定义（CherryStudio 风格）
       // 部分中转服务不支持同时使用 thinking + tools 参数，但支持 XML 格式
       if (tools != null && tools.isNotEmpty) {
         final xmlTools = _convertToolsToXml(tools);
-        final toolSystemBlock = {
-          'type': 'text',
-          'text': xmlTools,
-        };
+        final toolSystemBlock = {'type': 'text', 'text': xmlTools};
         // 将工具定义添加到 system prompt
         if (requestData['system'] == null) {
           requestData['system'] = [toolSystemBlock];
         } else {
           (requestData['system'] as List).add(toolSystemBlock);
         }
-        debugPrint('🔧 Using XML tools format for thinking mode: ${tools.length} tools');
+        debugPrint(
+          '🔧 Using XML tools format for thinking mode: ${tools.length} tools',
+        );
       }
     } else {
       // 未启用思考链时，使用标准 tools 参数
-      final isOfficialApi = customApiUrl == null || customApiUrl!.contains('anthropic.com');
-
       // 官方 API 且配置了 MCP Server：使用 MCP connector 模式
-      if (isOfficialApi && mcpServerUrl != null && mcpServerUrl!.isNotEmpty) {
+      if (isOfficialApi &&
+          tools != null &&
+          tools.isNotEmpty &&
+          mcpServerUrl != null &&
+          mcpServerUrl!.isNotEmpty) {
         requestData['mcp_servers'] = [
-          {
-            'type': 'url',
-            'url': mcpServerUrl,
-            'name': 'howtocook-mcp',
-          }
+          {'type': 'url', 'url': mcpServerUrl, 'name': 'howtocook-mcp'},
         ];
         debugPrint('🔧 Using MCP connector mode for official API');
       } else if (tools != null && tools.isNotEmpty) {
@@ -522,7 +570,9 @@ class ClaudeAdapter implements AIService {
       }
       if (tool['input_schema'] != null) {
         buffer.writeln('  <arguments>');
-        buffer.writeln('    ${jsonEncode({'jsonSchema': tool['input_schema']})}');
+        buffer.writeln(
+          '    ${jsonEncode({'jsonSchema': tool['input_schema']})}',
+        );
         buffer.writeln('  </arguments>');
       }
       buffer.writeln('</tool>');
@@ -541,8 +591,12 @@ class ClaudeAdapter implements AIService {
     buffer.writeln('## Tool Use Rules');
     buffer.writeln('1. Always use the right arguments for the tools.');
     buffer.writeln('2. Call a tool only when needed.');
-    buffer.writeln('3. If no tool call is needed, just answer the question directly.');
-    buffer.writeln('4. For tool use, MAKE SURE use XML tag format as shown above.');
+    buffer.writeln(
+      '3. If no tool call is needed, just answer the question directly.',
+    );
+    buffer.writeln(
+      '4. For tool use, MAKE SURE use XML tag format as shown above.',
+    );
 
     return buffer.toString();
   }
@@ -550,15 +604,14 @@ class ClaudeAdapter implements AIService {
   /// 转换消息格式
   Map<String, dynamic> _convertMessage(ChatMessage message) {
     final content = <Map<String, dynamic>>[];
-    final isOfficialApi = customApiUrl == null || customApiUrl!.contains('anthropic.com');
-    final useMcpFormat = isOfficialApi && mcpServerUrl != null && mcpServerUrl!.isNotEmpty;
+    final isOfficialApi =
+        customApiUrl == null || customApiUrl!.contains('anthropic.com');
+    final useMcpFormat =
+        isOfficialApi && mcpServerUrl != null && mcpServerUrl!.isNotEmpty;
 
     for (final item in message.content) {
       if (item is TextContent) {
-        content.add({
-          'type': 'text',
-          'text': item.text,
-        });
+        content.add({'type': 'text', 'text': item.text});
       } else if (item is ImageContent) {
         content.add({
           'type': 'image',
@@ -595,10 +648,7 @@ class ClaudeAdapter implements AIService {
             'tool_use_id': item.toolUseId,
             'is_error': false,
             'content': [
-              {
-                'type': 'text',
-                'text': jsonEncode(item.result),
-              }
+              {'type': 'text', 'text': jsonEncode(item.result)},
             ],
           });
         } else {
@@ -612,10 +662,33 @@ class ClaudeAdapter implements AIService {
       }
     }
 
+    if (message.runtimeContext != null &&
+        message.runtimeContext!.trim().isNotEmpty) {
+      content.add({'type': 'text', 'text': message.runtimeContext!.trim()});
+    }
+
     return {
       'role': message.role == MessageRole.user ? 'user' : 'assistant',
       'content': content,
     };
+  }
+
+  AIUsageMetrics? _usageFromEvent(dynamic raw) {
+    if (raw is! Map) return null;
+    final event = Map<String, dynamic>.from(raw);
+    dynamic usageRaw = event['usage'];
+    if (usageRaw == null && event['message'] is Map) {
+      usageRaw = (event['message'] as Map)['usage'];
+    }
+    if (usageRaw is! Map) return null;
+    final usage = Map<String, dynamic>.from(usageRaw);
+    int value(String key) => (usage[key] as num?)?.toInt() ?? 0;
+    return AIUsageMetrics(
+      inputTokens: value('input_tokens'),
+      outputTokens: value('output_tokens'),
+      cacheReadTokens: value('cache_read_input_tokens'),
+      cacheWriteTokens: value('cache_creation_input_tokens'),
+    );
   }
 
   /// 处理 Dio 异常

@@ -13,21 +13,22 @@ class ChatMessage with _$ChatMessage {
     required DateTime timestamp,
     @Default(MessageStatus.sent) MessageStatus status,
     String? modelId, // 消息使用的模型ID（用于显示模型名称）
-    String? reasoningContent, // AI思考过程（仅deepseek-reasoner等模型, JSON序列化为reasoning_content）
+    String?
+    reasoningContent, // AI思考过程（仅deepseek-reasoner等模型, JSON序列化为reasoning_content）
+    String? runtimeContext, // 创建消息时附加给模型的动态上下文，不在消息气泡中显示
     List<RecipeCard>? recipeCards, // 菜谱卡片（UI 展示用）
     List<String>? createdRecipeIds, // 该消息创建的食谱ID列表（用于持久化关联）
   }) = _ChatMessage;
 
-  factory ChatMessage.fromJson(Map<String, dynamic> json) => _$ChatMessageFromJson(json);
+  factory ChatMessage.fromJson(Map<String, dynamic> json) =>
+      _$ChatMessageFromJson(json);
 }
 
 /// 消息内容（支持多模态）
 @freezed
 class MessageContent with _$MessageContent {
   /// 文本内容
-  const factory MessageContent.text({
-    required String text,
-  }) = TextContent;
+  const factory MessageContent.text({required String text}) = TextContent;
 
   /// 图片内容
   const factory MessageContent.image({
@@ -49,7 +50,8 @@ class MessageContent with _$MessageContent {
     required Map<String, dynamic> result,
   }) = ToolResultContent;
 
-  factory MessageContent.fromJson(Map<String, dynamic> json) => _$MessageContentFromJson(json);
+  factory MessageContent.fromJson(Map<String, dynamic> json) =>
+      _$MessageContentFromJson(json);
 }
 
 /// 消息角色
@@ -79,5 +81,6 @@ class RecipeCard with _$RecipeCard {
     String? category,
   }) = _RecipeCard;
 
-  factory RecipeCard.fromJson(Map<String, dynamic> json) => _$RecipeCardFromJson(json);
+  factory RecipeCard.fromJson(Map<String, dynamic> json) =>
+      _$RecipeCardFromJson(json);
 }

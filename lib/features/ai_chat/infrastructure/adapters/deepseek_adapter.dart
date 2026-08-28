@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../../domain/entities/chat_message.dart';
+import '../../domain/entities/ai_usage_metrics.dart';
 import '../../domain/services/ai_service.dart';
 
 /// DeepSeek API 适配器
@@ -40,16 +41,20 @@ class DeepSeekAdapter implements AIService {
     List<Map<String, dynamic>>? tools,
     int? maxTokens,
     void Function(String reasoningContent)? onReasoningContent,
+    void Function(AIUsageMetrics usage)? onUsage,
   }) async* {
     try {
-      final requestData = _buildRequest(messages, tools, maxTokens, stream: true);
+      final requestData = _buildRequest(
+        messages,
+        tools,
+        maxTokens,
+        stream: true,
+      );
 
       final response = await _dio.post(
         '/chat/completions',
         data: requestData,
-        options: Options(
-          responseType: ResponseType.stream,
-        ),
+        options: Options(responseType: ResponseType.stream),
       );
 
       // Dio 流是 Stream<Uint8List>，先 cast 成 List<int> 再用 Utf8Decoder 绑定，避免类型不匹配且保持多字节字符完整解码
@@ -89,6 +94,8 @@ class DeepSeekAdapter implements AIService {
 
           try {
             final json = jsonDecode(data);
+            final usage = _usageFromJson(json['usage']);
+            if (usage != null) onUsage?.call(usage);
             final choices = json['choices'] as List<dynamic>?;
             if (choices != null && choices.isNotEmpty) {
               final delta = choices[0]['delta'] as Map<String, dynamic>?;
@@ -127,9 +134,15 @@ class DeepSeekAdapter implements AIService {
     int? maxTokens,
     void Function(String textChunk)? onTextChunk,
     void Function(String reasoningContent)? onReasoningContent,
+    void Function(AIUsageMetrics usage)? onUsage,
   }) async {
     try {
-      final requestData = _buildRequest(messages, tools, maxTokens, stream: true);
+      final requestData = _buildRequest(
+        messages,
+        tools,
+        maxTokens,
+        stream: true,
+      );
 
       final response = await _dio.post(
         '/chat/completions',
@@ -156,6 +169,8 @@ class DeepSeekAdapter implements AIService {
 
           try {
             final json = jsonDecode(data) as Map<String, dynamic>;
+            final usage = _usageFromJson(json['usage']);
+            if (usage != null) onUsage?.call(usage);
             final choices = json['choices'] as List<dynamic>?;
             if (choices == null || choices.isEmpty) continue;
             final delta = choices[0]['delta'] as Map<String, dynamic>?;
@@ -220,11 +235,13 @@ class DeepSeekAdapter implements AIService {
           debugPrint('⚠️ DeepSeek tool_call arguments 解析失败: $e; raw=$argsRaw');
           input = <String, dynamic>{};
         }
-        messageContent.add(MessageContent.toolUse(
-          toolUseId: acc.id!,
-          name: acc.name!,
-          input: input,
-        ));
+        messageContent.add(
+          MessageContent.toolUse(
+            toolUseId: acc.id!,
+            name: acc.name!,
+            input: input,
+          ),
+        );
       }
 
       if (messageContent.isEmpty) {
@@ -236,7 +253,9 @@ class DeepSeekAdapter implements AIService {
         role: MessageRole.assistant,
         content: messageContent,
         timestamp: DateTime.now(),
-        reasoningContent: reasoningBuffer.isEmpty ? null : reasoningBuffer.toString(),
+        reasoningContent: reasoningBuffer.isEmpty
+            ? null
+            : reasoningBuffer.toString(),
       );
     } on DioException catch (e) {
       if (e.response != null && e.response!.data is ResponseBody) {
@@ -247,7 +266,9 @@ class DeepSeekAdapter implements AIService {
             bytes.addAll(chunk);
           }
           final bodyStr = utf8.decode(bytes);
-          debugPrint('🔴 DeepSeek API error (${e.response!.statusCode}): $bodyStr');
+          debugPrint(
+            '🔴 DeepSeek API error (${e.response!.statusCode}): $bodyStr',
+          );
 
           String errorMessage = 'DeepSeek API error';
           try {
@@ -259,9 +280,12 @@ class DeepSeekAdapter implements AIService {
           } catch (_) {
             errorMessage = bodyStr;
           }
-          throw Exception('DeepSeek API error (${e.response!.statusCode}): $errorMessage');
+          throw Exception(
+            'DeepSeek API error (${e.response!.statusCode}): $errorMessage',
+          );
         } catch (readError) {
-          if (readError is Exception && readError.toString().contains('DeepSeek API error')) {
+          if (readError is Exception &&
+              readError.toString().contains('DeepSeek API error')) {
             rethrow;
           }
           debugPrint('🔴 Failed to read error response: $readError');
@@ -301,7 +325,9 @@ class DeepSeekAdapter implements AIService {
       'model_id': modelId,
       'supports_streaming': true,
       'supports_vision': false, // DeepSeek 当前不支持视觉输入
-      'supports_tools': !modelId.contains('reasoner'), // reasoner 不支持 Function Calling
+      'supports_tools': !modelId.contains(
+        'reasoner',
+      ), // reasoner 不支持 Function Calling
     };
   }
 
@@ -316,6 +342,7 @@ class DeepSeekAdapter implements AIService {
       'model': modelId,
       'messages': messages.map(_convertMessage).toList(),
       'stream': stream,
+      if (stream) 'stream_options': {'include_usage': true},
     };
 
     if (maxTokens != null) {
@@ -331,7 +358,9 @@ class DeepSeekAdapter implements AIService {
     // 旧版 deepseek-reasoner 不支持 Function Calling，建议迁移到 deepseek-v4-flash/pro
     if (modelId.contains('reasoner')) {
       if (tools != null && tools.isNotEmpty) {
-        throw Exception('deepseek-reasoner 不支持工具调用，请切换到 deepseek-v4-flash 或 deepseek-v4-pro');
+        throw Exception(
+          'deepseek-reasoner 不支持工具调用，请切换到 deepseek-v4-flash 或 deepseek-v4-pro',
+        );
       }
       // 过滤掉历史消息中的工具调用和结果
       requestData['messages'] = (requestData['messages'] as List)
@@ -347,22 +376,19 @@ class DeepSeekAdapter implements AIService {
 
   /// 转换消息格式
   Map<String, dynamic> _convertMessage(ChatMessage message) {
-    String? textContent;
+    final textParts = <String>[];
     final toolCalls = <Map<String, dynamic>>[];
 
     for (final item in message.content) {
       if (item is TextContent) {
-        textContent = item.text;
+        textParts.add(item.text);
       } else if (item is ImageContent) {
         throw Exception('DeepSeek does not support image input');
       } else if (item is ToolUseContent) {
         toolCalls.add({
           'id': item.toolUseId,
           'type': 'function',
-          'function': {
-            'name': item.name,
-            'arguments': jsonEncode(item.input),
-          },
+          'function': {'name': item.name, 'arguments': jsonEncode(item.input)},
         });
       } else if (item is ToolResultContent) {
         return {
@@ -372,6 +398,12 @@ class DeepSeekAdapter implements AIService {
         };
       }
     }
+
+    if (message.runtimeContext != null &&
+        message.runtimeContext!.trim().isNotEmpty) {
+      textParts.add(message.runtimeContext!.trim());
+    }
+    final textContent = textParts.join('\n\n');
 
     if (toolCalls.isNotEmpty) {
       final msg = <String, dynamic>{
@@ -387,12 +419,25 @@ class DeepSeekAdapter implements AIService {
 
     final msg = <String, dynamic>{
       'role': _convertRole(message.role),
-      'content': textContent ?? '',
+      'content': textContent,
     };
-    if (message.role == MessageRole.assistant && message.reasoningContent != null) {
+    if (message.role == MessageRole.assistant &&
+        message.reasoningContent != null) {
       msg['reasoning_content'] = message.reasoningContent;
     }
     return msg;
+  }
+
+  AIUsageMetrics? _usageFromJson(dynamic raw) {
+    if (raw is! Map) return null;
+    final usage = Map<String, dynamic>.from(raw);
+    int value(String key) => (usage[key] as num?)?.toInt() ?? 0;
+    return AIUsageMetrics(
+      inputTokens: value('prompt_tokens'),
+      outputTokens: value('completion_tokens'),
+      cacheReadTokens: value('prompt_cache_hit_tokens'),
+      cacheMissTokens: value('prompt_cache_miss_tokens'),
+    );
   }
 
   /// 转换角色

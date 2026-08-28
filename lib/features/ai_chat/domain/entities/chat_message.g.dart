@@ -18,6 +18,7 @@ _$ChatMessageImpl _$$ChatMessageImplFromJson(Map<String, dynamic> json) =>
           MessageStatus.sent,
       modelId: json['modelId'] as String?,
       reasoningContent: json['reasoningContent'] as String?,
+      runtimeContext: json['runtimeContext'] as String?,
       recipeCards: (json['recipeCards'] as List<dynamic>?)
           ?.map((e) => RecipeCard.fromJson(e as Map<String, dynamic>))
           .toList(),
@@ -35,6 +36,7 @@ Map<String, dynamic> _$$ChatMessageImplToJson(_$ChatMessageImpl instance) =>
       'status': _$MessageStatusEnumMap[instance.status]!,
       'modelId': instance.modelId,
       'reasoningContent': instance.reasoningContent,
+      'runtimeContext': instance.runtimeContext,
       'recipeCards': instance.recipeCards,
       'createdRecipeIds': instance.createdRecipeIds,
     };

@@ -1,4 +1,5 @@
 import '../entities/chat_message.dart';
+import '../entities/ai_usage_metrics.dart';
 
 /// AI 服务接口
 ///
@@ -16,6 +17,7 @@ abstract class AIService {
     List<Map<String, dynamic>>? tools,
     int? maxTokens,
     void Function(String reasoningContent)? onReasoningContent,
+    void Function(AIUsageMetrics usage)? onUsage,
   });
 
   /// 发送消息（非流式响应）
@@ -33,6 +35,7 @@ abstract class AIService {
     int? maxTokens,
     void Function(String textChunk)? onTextChunk,
     void Function(String reasoningContent)? onReasoningContent,
+    void Function(AIUsageMetrics usage)? onUsage,
   });
 
   /// 验证 API Key 是否有效
