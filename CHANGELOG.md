@@ -7,6 +7,21 @@
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-08-29
+
+### 新增
+- **App 内置菜谱工具**：AI 可通过稳定的工具目录搜索菜谱、按分类浏览、读取详情、推荐搭配、随机选菜、创建草稿；本地模式额外支持读取用户收藏。
+- **会话级数据模式**：聊天页可在本地数据与云端数据间切换，选择随会话保存；本地模式会读取内置、用户创建、用户修改及已保存的 AI 菜谱。
+
+### 变更
+- **工具上下文精简**：不再从远端动态加载工具定义，也不再向模型返回整个菜谱库；列表工具最多返回 20 条摘要，完整内容按 ID 再读取，以降低上下文与调用成本并提高稳定前缀缓存率。
+- **云端 MCP 渐进迁移**：云端模式继续兼容现有 MCP 和静态 V2 数据源，本地模式完全由 App 内置工具执行，为后续移除云端 MCP 保留过渡期。
+
+### 修复
+- **工具权限控制**：模型只会收到当前数据模式允许的工具，执行层再次校验工具名；云端模式无法调用本地收藏等本地专属能力。
+- **本地分类漏掉自建菜谱**：分类查询改为从合并后的本地菜谱库筛选，用户添加或 AI 生成后保存的菜谱可被 AI 正确读取。
+- **DeepSeek V4 工具兼容**：补齐 `deepseek-v4-flash` 在 Chat Completions 与 Responses 两种格式下的工具定义、调用结果和多轮回传测试，并移除 DeepSeek Responses 不支持的 OpenAI 专属缓存参数。
+
 ## [0.4.5] - 2026-08-28
 
 ### 新增
@@ -271,7 +286,8 @@
 ### 修复
 - 解决 AGP 8 下部分三方插件（如 `install_plugin`）缺失 `namespace` 导致的构建失败。
 
-[Unreleased]: https://github.com/Gaq152/howtocook-flutter/compare/v0.4.5...HEAD
+[Unreleased]: https://github.com/Gaq152/howtocook-flutter/compare/v0.4.6...HEAD
+[0.4.6]: https://github.com/Gaq152/howtocook-flutter/compare/v0.4.5...v0.4.6
 [0.4.5]: https://github.com/Gaq152/howtocook-flutter/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/Gaq152/howtocook-flutter/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/Gaq152/howtocook-flutter/compare/v0.4.2...v0.4.3

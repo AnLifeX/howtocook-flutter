@@ -20,7 +20,8 @@
 - **AI 助手**：使用自己配置的 Claude / GPT / DeepSeek 模型，支持多轮会话、图片识别、流式输出和**思考链实时展示**。
 - **长会话管理**：显示上下文窗口占用与服务商缓存命中率；临近上限时提醒新建会话，继续使用则自动压缩早期上下文。
 - **多种 API 格式**：模型可选 Chat Completions、OpenAI Responses 或 Anthropic Messages，也可自动按服务商和 URL 识别。
-- **AI 生成菜谱**：通过 MCP `create_recipe` 工具，AI 在对话里直接生成菜谱卡片并一键入库。
+- **本地 / 云端菜谱工具**：每个会话可切换数据模式；AI 能搜索、读取详情、推荐、随机选菜和生成菜谱草稿，本地模式还可读取收藏及用户保存的菜谱。
+- **AI 生成菜谱**：通过 App 内置 `createRecipe` 工具在对话里生成菜谱卡片，用户预览确认后再保存，不会静默写入本地菜谱库。
 - **二维码分享**：扫码导入朋友分享的菜谱，或把自己的菜谱生成二维码分享出去。
 - **教程体系**：基础、进阶、学习三档烹饪教程，可自创。
 - **离线优先**：V1 资源随 APK 提供兜底；云端 V2 按不可变版本同步并原子激活。
@@ -31,7 +32,7 @@
 - **Clean Architecture + Feature-Based**：每个功能模块严格分 Domain / Application / Infrastructure / Presentation 四层。
 - **双存储策略**：Hive（全平台键值）＋ Sqflite（移动/桌面端关系型），按场景分工。
 - **大量代码生成**：Freezed / JSON / Riverpod / Hive Adapter 全部由 `build_runner` 产出。
-- **AI 适配器模式**：`ClaudeAdapter` / `OpenAIAdapter` / `DeepSeekAdapter` 统一接口，兼容 Chat Completions、Responses 与 Anthropic Messages，并采集上下文缓存用量。
+- **AI 适配器与工具权限**：`ClaudeAdapter` / `OpenAIAdapter` / `DeepSeekAdapter` 兼容 Chat Completions、Responses 与 Anthropic Messages；稳定工具目录按会话数据模式授权，执行前二次校验。
 - **Release 自签与自升级**：独立 keystore，CI 与本地共享密钥；Release 页产物自动生成 `manifest.json`，客户端自动更新直连消费。
 
 ## 🧱 技术栈
@@ -56,7 +57,7 @@ lib/
 │   └── services/data_sync_service.dart · update_service.dart · github_mirror_resolver.dart
 └── features/             # 按业务分模块，每个模块内部是四层架构
     ├── recipe/           # 菜谱（含二维码分享）
-    ├── ai_chat/          # AI 对话 + MCP 工具
+    ├── ai_chat/          # AI 对话 + App 内置工具 + 云端 MCP 兼容层
     ├── tips/             # 教程
     ├── user/             # 我的（收藏、自创）
     ├── settings/         # 设置（模型管理、检查更新）
@@ -97,7 +98,7 @@ dart run tool/verify_v2_compatibility.dart <version-directory>
 
 | 变量                                                        | 说明                                                          |
 | ----------------------------------------------------------- | ------------------------------------------------------------- |
-| `MCP_BASE_URL`                                            | HowToCook MCP 服务地址，用于 AI 调用 `create_recipe` 等工具 |
+| `MCP_BASE_URL`（可选）                                   | 过渡期云端数据模式的 HowToCook MCP 服务地址；本地数据模式不依赖此配置 |
 | `STATIC_RESOURCE_URL`                                     | 远端菜谱数据与图片的 CDN / GitHub Pages 根地址                |
 | `RELEASE_MANIFEST_URL`（可选）                            | 覆盖默认的更新检查 manifest 地址，方便调试私有发布渠道        |
 
