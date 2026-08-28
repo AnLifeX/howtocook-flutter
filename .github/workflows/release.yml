@@ -91,14 +91,9 @@ jobs:
       - name: Write .env
         env:
           MCP_BASE_URL: ${{ secrets.MCP_BASE_URL }}
-          BUILTIN_DEEPSEEK_API_KEY: ${{ secrets.BUILTIN_DEEPSEEK_API_KEY }}
-          RATE_LIMIT_HOURLY: ${{ secrets.RATE_LIMIT_HOURLY }}
         run: |
           cat > .env <<EOF
           MCP_BASE_URL=${MCP_BASE_URL}
-          BUILTIN_DEEPSEEK_API_URL=https://api.deepseek.com/v1
-          BUILTIN_DEEPSEEK_API_KEY=${BUILTIN_DEEPSEEK_API_KEY}
-          RATE_LIMIT_HOURLY=${RATE_LIMIT_HOURLY:-10}
           EOF
 
       - name: Install dependencies

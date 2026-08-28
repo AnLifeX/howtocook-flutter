@@ -28,7 +28,7 @@ mixin _$AIModelConfig {
   String? get description => throw _privateConstructorUsedError; // 描述
   bool get isEnabled => throw _privateConstructorUsedError; // 是否启用
   bool get useBuiltinKey =>
-      throw _privateConstructorUsedError; // 使用内置 Key 还是用户 Key
+      throw _privateConstructorUsedError; // 兼容旧数据；新版本始终使用用户 Key
   String? get customApiUrl =>
       throw _privateConstructorUsedError; // 用户自定义 API 地址
   String? get customApiKey =>
@@ -334,7 +334,7 @@ class _$AIModelConfigImpl implements _AIModelConfig {
       required this.displayName,
       this.description,
       this.isEnabled = true,
-      this.useBuiltinKey = true,
+      this.useBuiltinKey = false,
       this.customApiUrl,
       this.customApiKey,
       this.isDefault = false,
@@ -371,7 +371,7 @@ class _$AIModelConfigImpl implements _AIModelConfig {
   @override
   @JsonKey()
   final bool useBuiltinKey;
-// 使用内置 Key 还是用户 Key
+// 兼容旧数据；新版本始终使用用户 Key
   @override
   final String? customApiUrl;
 // 用户自定义 API 地址
@@ -522,7 +522,7 @@ abstract class _AIModelConfig implements AIModelConfig {
   bool get isEnabled;
   @override // 是否启用
   bool get useBuiltinKey;
-  @override // 使用内置 Key 还是用户 Key
+  @override // 兼容旧数据；新版本始终使用用户 Key
   String? get customApiUrl;
   @override // 用户自定义 API 地址
   String? get customApiKey;

@@ -6,13 +6,11 @@ part of 'ai_providers.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$availableModelsHash() => r'02cf7eb33a7687752c99768a413feee02aa11cfa';
+String _$availableModelsHash() => r'4b70bfd8aff92ce730fe1fbea4cb096bc9b218b9';
 
 /// 所有可用的模型配置列表 Provider
 ///
-/// 包含内置模型和用户自定义模型
-/// - 内置模型：来自 AIServiceFactory.getBuiltinModels()，不可删除
-/// - 用户模型：存储在 Hive aiModelsBox 中，可增删改
+/// 用户模型存储在 Hive aiModelsBox 中，可增删改，应用升级不会覆盖。
 ///
 /// Copied from [AvailableModels].
 @ProviderFor(AvailableModels)

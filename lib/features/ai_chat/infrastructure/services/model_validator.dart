@@ -29,10 +29,7 @@ class ModelValidationResult {
   }
 
   factory ModelValidationResult.failure(String errorMessage) {
-    return ModelValidationResult(
-      isValid: false,
-      errorMessage: errorMessage,
-    );
+    return ModelValidationResult(isValid: false, errorMessage: errorMessage);
   }
 }
 
@@ -55,19 +52,12 @@ class ModelValidator {
     try {
       debugPrint('🔍 开始验证模型: ${config.displayName} (${config.modelId})');
 
-      // 1. 检查是否使用内置 Key 但服务商无内置 Key
-      if (config.useBuiltinKey && !AIServiceFactory.hasBuiltinKey(config.provider)) {
-        return ModelValidationResult.failure(
-          '该服务商暂无内置 API Key，请使用自定义 API Key',
-        );
-      }
-
-      // 2. 检查自定义 Key 是否提供
-      if (!config.useBuiltinKey && (config.customApiKey == null || config.customApiKey!.isEmpty)) {
+      // 1. 新版本仅接受用户自己的 API Key。
+      if (config.customApiKey == null || config.customApiKey!.trim().isEmpty) {
         return ModelValidationResult.failure('请提供 API Key');
       }
 
-      // 3. 创建 AI Service 并验证
+      // 2. 创建 AI Service 并验证
       final service = AIServiceFactory.create(config);
 
       // 带超时的验证
@@ -122,7 +112,10 @@ class ModelValidator {
   ) {
     // 1. 尝试从 API 响应解析能力
     if (modelInfo != null && modelInfo.isNotEmpty) {
-      final apiCapabilities = _parseCapabilitiesFromApi(config.provider, modelInfo);
+      final apiCapabilities = _parseCapabilitiesFromApi(
+        config.provider,
+        modelInfo,
+      );
       if (apiCapabilities != null) {
         debugPrint('✅ 从 API 响应解析到能力');
         return apiCapabilities;
@@ -172,7 +165,9 @@ class ModelValidator {
   }
 
   /// 解析 OpenAI API 响应
-  static ModelCapabilities? _parseOpenAICapabilities(Map<String, dynamic> info) {
+  static ModelCapabilities? _parseOpenAICapabilities(
+    Map<String, dynamic> info,
+  ) {
     // OpenAI API 返回的 model info 示例：
     // {
     //   "id": "gpt-4o",
@@ -185,14 +180,18 @@ class ModelValidator {
   }
 
   /// 解析 Claude API 响应
-  static ModelCapabilities? _parseClaudeCapabilities(Map<String, dynamic> info) {
+  static ModelCapabilities? _parseClaudeCapabilities(
+    Map<String, dynamic> info,
+  ) {
     // Claude API 可能返回模型能力信息
     // 具体格式需要查看实际 API 响应
     return null; // 目前无法从 API 直接解析，使用数据库匹配
   }
 
   /// 解析 DeepSeek API 响应
-  static ModelCapabilities? _parseDeepSeekCapabilities(Map<String, dynamic> info) {
+  static ModelCapabilities? _parseDeepSeekCapabilities(
+    Map<String, dynamic> info,
+  ) {
     // DeepSeek API 响应格式
     return null; // 目前无法从 API 直接解析，使用数据库匹配
   }
@@ -212,14 +211,8 @@ class ModelValidator {
     }
 
     // 检查 API Key
-    if (config.useBuiltinKey) {
-      if (!AIServiceFactory.hasBuiltinKey(config.provider)) {
-        return (false, '该服务商暂无内置 API Key');
-      }
-    } else {
-      if (config.customApiKey == null || config.customApiKey!.trim().isEmpty) {
-        return (false, '请输入 API Key');
-      }
+    if (config.customApiKey == null || config.customApiKey!.trim().isEmpty) {
+      return (false, '请输入 API Key');
     }
 
     return (true, null);

@@ -11,20 +11,14 @@ part 'ai_providers.g.dart';
 
 /// 当前选中的模型配置 Provider
 ///
-/// 默认使用 Claude 3.5 Sonnet（第一个内置模型）
-final selectedModelConfigProvider = StateProvider<AIModelConfig>((ref) {
-  final builtinModels = AIServiceFactory.getBuiltinModels();
-  return builtinModels.firstWhere(
-    (model) => model.isDefault,
-    orElse: () => builtinModels.first,
-  );
-});
+/// App 不再提供内置模型；模型列表加载完成后由聊天页选择用户模型。
+final selectedModelConfigProvider = StateProvider<AIModelConfig?>(
+  (ref) => null,
+);
 
 /// 所有可用的模型配置列表 Provider
 ///
-/// 包含内置模型和用户自定义模型
-/// - 内置模型：来自 AIServiceFactory.getBuiltinModels()，不可删除
-/// - 用户模型：存储在 Hive aiModelsBox 中，可增删改
+/// 用户模型存储在 Hive aiModelsBox 中，可增删改，应用升级不会覆盖。
 @Riverpod(keepAlive: true)
 class AvailableModels extends _$AvailableModels {
   @override
@@ -65,13 +59,6 @@ class AvailableModels extends _$AvailableModels {
   /// 只能删除用户创建的模型，不能删除内置模型
   /// 抛出 [ArgumentError] 如果尝试删除内置模型
   Future<void> deleteUserModel(String modelId) async {
-    // 检查是否为内置模型（用户输入错误，直接抛出异常）
-    final builtinModels = AIServiceFactory.getBuiltinModels();
-    final isBuiltin = builtinModels.any((m) => m.id == modelId);
-    if (isBuiltin) {
-      throw ArgumentError('Cannot delete builtin model: $modelId');
-    }
-
     final box = HiveService.getAIModelsBox();
     await box.delete(modelId);
     await _reloadModels();
@@ -134,19 +121,13 @@ class AvailableModels extends _$AvailableModels {
     }
   }
 
-  /// 加载所有模型（内置 + 用户自定义）
-  ///
-  /// 内置模型始终在前，即使 Hive 加载失败也会返回内置模型
+  /// 加载用户自定义模型。
   Future<List<AIModelConfig>> _loadAllModels() async {
-    final builtinModels = AIServiceFactory.getBuiltinModels();
-
     try {
-      final userModels = await _loadUserModelsFromHive();
-      return [...builtinModels, ...userModels];
+      return await _loadUserModelsFromHive();
     } catch (e) {
-      // 如果加载用户模型失败，至少返回内置模型（降级策略）
       debugPrint('⚠️ Failed to load user models from Hive: $e');
-      return builtinModels;
+      return const [];
     }
   }
 
@@ -162,7 +143,7 @@ class AvailableModels extends _$AvailableModels {
         final model = AIModelConfig.fromJson(json);
 
         // 确保用户模型的 isBuiltin 标记为 false
-        models.add(model.copyWith(isBuiltin: false));
+        models.add(model.copyWith(isBuiltin: false, useBuiltinKey: false));
       } catch (e) {
         // 忽略无法解析的模型，继续加载其他模型
         debugPrint('⚠️ Failed to parse model from Hive: $e');
@@ -178,6 +159,7 @@ class AvailableModels extends _$AvailableModels {
     final now = DateTime.now();
     return model.copyWith(
       isBuiltin: false,
+      useBuiltinKey: false,
       createdAt: model.createdAt ?? now,
       updatedAt: now,
     );
@@ -218,33 +200,35 @@ class AvailableModels extends _$AvailableModels {
 /// AI Service Provider
 ///
 /// 根据当前选中的模型配置创建 AI Service 实例
-final aiServiceProvider = Provider<AIService>((ref) {
+final aiServiceProvider = Provider<AIService?>((ref) {
   final config = ref.watch(selectedModelConfigProvider);
+  if (config == null) return null;
   return AIServiceFactory.create(config);
 });
 
 /// 验证模型配置 Provider
 ///
 /// 用于验证用户输入的 API Key 是否有效
-final validateModelConfigProvider = FutureProvider.family<bool, AIModelConfig>(
-  (ref, config) async {
-    return AIServiceFactory.validateConfig(config);
-  },
-);
+final validateModelConfigProvider = FutureProvider.family<bool, AIModelConfig>((
+  ref,
+  config,
+) async {
+  return AIServiceFactory.validateConfig(config);
+});
 
 /// 模型能力 Provider
 ///
 /// 获取当前模型的能力信息（是否支持图片、工具调用等）
 final modelCapabilitiesProvider = Provider<ModelCapabilities>((ref) {
   final config = ref.watch(selectedModelConfigProvider);
-  return config.capabilities;
+  return config?.capabilities ?? const ModelCapabilities();
 });
 
 /// 切换模型 Provider
 ///
 /// 用于在 UI 中切换不同的模型
-class ModelSwitcher extends StateNotifier<AIModelConfig> {
-  ModelSwitcher(this.ref, AIModelConfig initialModel) : super(initialModel);
+class ModelSwitcher extends StateNotifier<AIModelConfig?> {
+  ModelSwitcher(this.ref, AIModelConfig? initialModel) : super(initialModel);
 
   final Ref ref;
 
@@ -263,7 +247,7 @@ class ModelSwitcher extends StateNotifier<AIModelConfig> {
     // 从 AsyncValue 中提取模型列表，失败时使用内置模型
     final availableModels = availableModelsAsync.maybeWhen(
       data: (models) => models,
-      orElse: () => AIServiceFactory.getBuiltinModels(),
+      orElse: () => const <AIModelConfig>[],
     );
 
     final enabledModels = availableModels.where((m) => m.isEnabled).toList();
@@ -272,14 +256,15 @@ class ModelSwitcher extends StateNotifier<AIModelConfig> {
       throw Exception('No enabled models available');
     }
 
-    final currentIndex = enabledModels.indexWhere((m) => m.id == state.id);
+    final currentIndex = enabledModels.indexWhere((m) => m.id == state?.id);
     final nextIndex = (currentIndex + 1) % enabledModels.length;
     state = enabledModels[nextIndex];
   }
 }
 
 /// 模型切换器 Provider
-final modelSwitcherProvider = StateNotifierProvider<ModelSwitcher, AIModelConfig>((ref) {
-  final initialModel = ref.watch(selectedModelConfigProvider);
-  return ModelSwitcher(ref, initialModel);
-});
+final modelSwitcherProvider =
+    StateNotifierProvider<ModelSwitcher, AIModelConfig?>((ref) {
+      final initialModel = ref.watch(selectedModelConfigProvider);
+      return ModelSwitcher(ref, initialModel);
+    });

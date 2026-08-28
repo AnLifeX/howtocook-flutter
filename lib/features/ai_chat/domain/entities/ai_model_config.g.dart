@@ -14,7 +14,7 @@ _$AIModelConfigImpl _$$AIModelConfigImplFromJson(Map<String, dynamic> json) =>
       displayName: json['displayName'] as String,
       description: json['description'] as String?,
       isEnabled: json['isEnabled'] as bool? ?? true,
-      useBuiltinKey: json['useBuiltinKey'] as bool? ?? true,
+      useBuiltinKey: json['useBuiltinKey'] as bool? ?? false,
       customApiUrl: json['customApiUrl'] as String?,
       customApiKey: json['customApiKey'] as String?,
       isDefault: json['isDefault'] as bool? ?? false,

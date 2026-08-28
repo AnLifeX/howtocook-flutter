@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:howtocook/features/ai_chat/domain/entities/ai_usage_metrics.dart';
 import 'package:howtocook/features/ai_chat/domain/entities/chat_message.dart';
 import 'package:howtocook/features/ai_chat/domain/entities/conversation_context_state.dart';
+import 'package:howtocook/features/ai_chat/infrastructure/services/ai_service_factory.dart';
 
 void main() {
   test(
@@ -42,5 +43,9 @@ void main() {
       ConversationContextState.fromJson(state.toJson()).cacheHitRate,
       0.75,
     );
+  });
+
+  test('the app no longer ships built-in AI models', () {
+    expect(AIServiceFactory.getBuiltinModels(), isEmpty);
   });
 }

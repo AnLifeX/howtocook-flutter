@@ -142,7 +142,8 @@ final config = AIModelConfig(
   provider: AIProvider.claude,
   modelId: 'claude-3-5-sonnet-20241022',
   displayName: 'Claude 3.5 Sonnet',
-  useBuiltinKey: true, // 使用 .env 中的 Key
+  useBuiltinKey: false,
+  customApiKey: 'your-api-key', // 实际应用中由模型管理页安全保存
 );
 
 // 通过工厂创建服务

@@ -54,68 +54,21 @@ class AIServiceFactory {
 
   /// 获取 API Key
   ///
-  /// 优先使用用户自定义 Key，否则使用内置 Key
+  /// 仅使用用户在模型管理中配置的 Key。
   static String _getApiKey(AIModelConfig config) {
-    if (!config.useBuiltinKey && config.customApiKey != null) {
-      return config.customApiKey!;
-    }
-
-    // 从环境变量获取内置 Key
-    final envKey = _getBuiltinKeyEnvName(config.provider);
-    final apiKey = dotenv.env[envKey];
-
-    if (apiKey == null || apiKey.isEmpty) {
-      throw Exception(
-        'Missing API key for ${config.provider.name}. '
-        'Please set $envKey in .env file or provide a custom API key.',
-      );
-    }
-
-    return apiKey;
+    final apiKey = config.customApiKey?.trim();
+    if (apiKey != null && apiKey.isNotEmpty) return apiKey;
+    throw Exception('Missing user API key for ${config.provider.name}');
   }
 
   /// 获取 API URL
   ///
-  /// 优先使用用户自定义 URL，否则使用内置 URL
+  /// 使用用户自定义 URL；为空时由适配器使用服务商官方 URL。
   static String? _getApiUrl(AIModelConfig config) {
-    // 如果用户提供了自定义 URL，使用自定义 URL
     if (config.customApiUrl != null && config.customApiUrl!.isNotEmpty) {
       return config.customApiUrl;
     }
-
-    // 如果使用内置 Key，使用内置 URL
-    if (config.useBuiltinKey) {
-      final envKey = _getBuiltinUrlEnvName(config.provider);
-      final apiUrl = dotenv.env[envKey];
-      return apiUrl;
-    }
-
-    // 用户使用自定义 Key 但没有指定 URL，返回 null（使用默认官方 URL）
     return null;
-  }
-
-  /// 获取内置 Key 的环境变量名
-  static String _getBuiltinKeyEnvName(AIProvider provider) {
-    switch (provider) {
-      case AIProvider.claude:
-        return 'BUILTIN_CLAUDE_API_KEY';
-      case AIProvider.openai:
-        return 'BUILTIN_OPENAI_API_KEY';
-      case AIProvider.deepseek:
-        return 'BUILTIN_DEEPSEEK_API_KEY';
-    }
-  }
-
-  /// 获取内置 URL 的环境变量名
-  static String _getBuiltinUrlEnvName(AIProvider provider) {
-    switch (provider) {
-      case AIProvider.claude:
-        return 'BUILTIN_CLAUDE_API_URL';
-      case AIProvider.openai:
-        return 'BUILTIN_OPENAI_API_URL';
-      case AIProvider.deepseek:
-        return 'BUILTIN_DEEPSEEK_API_URL';
-    }
   }
 
   /// 验证模型配置
@@ -131,37 +84,8 @@ class AIServiceFactory {
     }
   }
 
-  /// 检查服务商是否有内置 API Key
-  ///
-  /// [provider] AI 服务商
-  /// 返回: true 表示有内置 Key，可以使用"使用内置 Key"功能
-  static bool hasBuiltinKey(AIProvider provider) {
-    final envKey = _getBuiltinKeyEnvName(provider);
-    final apiKey = dotenv.env[envKey];
-    return apiKey != null && apiKey.isNotEmpty;
-  }
-
-  /// 获取默认模型配置列表
-  ///
-  /// 返回: 内置的默认模型配置（仅 DeepSeek，其他服务商需用户自定义）
+  /// 新版本不再随 App 发布任何内置模型或共享 Key。
   static List<AIModelConfig> getBuiltinModels() {
-    return [
-      // DeepSeek 模型（仅保留有内置 Key 的服务商）
-      AIModelConfig(
-        id: 'builtin-deepseek-chat',
-        provider: AIProvider.deepseek,
-        modelId: 'deepseek-v4-flash',
-        displayName: 'DeepSeek V4 Flash',
-        description: '国产大模型，支持 1M 上下文，性能优秀且价格实惠',
-        isBuiltin: true,
-        isDefault: true,
-        capabilities: const ModelCapabilities(
-          supportsImageInput: false,
-          supportsMCP: true,
-          maxTokens: 8192,
-          contextWindow: 1000000,
-        ),
-      ),
-    ];
+    return const [];
   }
 }

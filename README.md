@@ -97,15 +97,11 @@ dart run tool/verify_v2_compatibility.dart <version-directory>
 | ----------------------------------------------------------- | ------------------------------------------------------------- |
 | `MCP_BASE_URL`                                            | HowToCook MCP 服务地址，用于 AI 调用 `create_recipe` 等工具 |
 | `STATIC_RESOURCE_URL`                                     | 远端菜谱数据与图片的 CDN / GitHub Pages 根地址                |
-| `BUILTIN_CLAUDE_API_URL` / `BUILTIN_CLAUDE_API_KEY`     | 内置 Claude API 配置（限流共享）                              |
-| `BUILTIN_OPENAI_API_URL` / `BUILTIN_OPENAI_API_KEY`     | 内置 OpenAI API 配置                                          |
-| `BUILTIN_DEEPSEEK_API_URL` / `BUILTIN_DEEPSEEK_API_KEY` | 内置 DeepSeek API 配置                                        |
-| `RATE_LIMIT_HOURLY`                                       | 内置 Key 每小时累计调用上限；用户用自己的 Key 不受限          |
 | `RELEASE_MANIFEST_URL`（可选）                            | 覆盖默认的更新检查 manifest 地址，方便调试私有发布渠道        |
 
 ## 💾 数据与存储
 
-- **Hive** (`lib/core/storage/hive_service.dart`)：AI 模型配置、聊天历史、收藏、用户设置、API 调用记录、`update_prefs`（跳过的版本号等）。全平台。
+- **Hive** (`lib/core/storage/hive_service.dart`)：用户 AI 模型配置、聊天历史、收藏、用户设置、`update_prefs`（跳过的版本号等）。全平台。应用升级不会覆盖用户添加的模型和 Key。
 - **Sqflite** (`lib/core/storage/database_manager.dart`)：`recipes` 表，支持复杂查询。**非 Web 平台**启用。
 - **数据源优先级**：`userModified` ＞ `userCreated` ＞ `cloud` ＞ `bundled`。合并策略见 `DataSyncService`。
 

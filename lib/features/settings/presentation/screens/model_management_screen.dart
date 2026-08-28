@@ -24,8 +24,7 @@ class ModelManagementScreen extends ConsumerStatefulWidget {
       _ModelManagementScreenState();
 }
 
-class _ModelManagementScreenState
-    extends ConsumerState<ModelManagementScreen> {
+class _ModelManagementScreenState extends ConsumerState<ModelManagementScreen> {
   String? _deletingModelId;
 
   @override
@@ -61,8 +60,9 @@ class _ModelManagementScreenState
           const SizedBox(height: 12),
           Text(
             '加载模型失败',
-            style:
-                AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: AppColors.textSecondary,
+            ),
           ),
           const SizedBox(height: 12),
           IconButton(
@@ -77,7 +77,6 @@ class _ModelManagementScreenState
 
   /// 构建模型列表（分组展示）
   Widget _buildModelSections(List<AIModelConfig> models) {
-    final builtinModels = models.where((m) => m.isBuiltin).toList();
     final userModels = models.where((m) => !m.isBuiltin).toList();
 
     return RefreshIndicator(
@@ -86,9 +85,6 @@ class _ModelManagementScreenState
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
         children: [
-          _buildSectionHeader('内置模型', Icons.workspace_premium_outlined),
-          ...builtinModels.map(_buildModelCard),
-          const SizedBox(height: 24),
           _buildSectionHeader('我的模型', Icons.person_outline),
           if (userModels.isEmpty) _buildEmptyHint(),
           ...userModels.map(_buildModelCard),
@@ -96,8 +92,12 @@ class _ModelManagementScreenState
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Text(
-              '自定义模型的输出质量取决于所选服务商，可能不完全遵循应用内提示词规范，仅供参考。',
-              style: TextStyle(fontSize: 11, color: AppColors.textDisabled, height: 1.5),
+              '应用不提供内置模型。API Key 仅保存在本机，应用升级不会覆盖这里添加的模型。模型输出质量取决于所选服务商。',
+              style: TextStyle(
+                fontSize: 11,
+                color: AppColors.textDisabled,
+                height: 1.5,
+              ),
               textAlign: TextAlign.center,
             ),
           ),
@@ -130,9 +130,10 @@ class _ModelManagementScreenState
         borderRadius: BorderRadius.circular(16),
       ),
       child: Text(
-        '还没有自定义模型，点击右上角 + 即可添加。',
-        style:
-            AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
+        '还没有模型，点击右上角 + 添加自己的模型和 API Key。',
+        style: AppTextStyles.bodyMedium.copyWith(
+          color: AppColors.textSecondary,
+        ),
       ),
     );
   }
@@ -168,15 +169,19 @@ class _ModelManagementScreenState
                 ),
                 if (model.isBuiltin)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.secondary.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
                       '内置',
-                      style: AppTextStyles.label
-                          .copyWith(color: AppColors.secondary),
+                      style: AppTextStyles.label.copyWith(
+                        color: AppColors.secondary,
+                      ),
                     ),
                   )
                 else
@@ -186,8 +191,9 @@ class _ModelManagementScreenState
                       IconButton(
                         tooltip: '编辑模型',
                         icon: const Icon(Icons.edit_outlined),
-                        onPressed:
-                            isDeleting ? null : () => _openModelForm(model: model),
+                        onPressed: isDeleting
+                            ? null
+                            : () => _openModelForm(model: model),
                       ),
                       isDeleting
                           ? const SizedBox(
@@ -197,8 +203,10 @@ class _ModelManagementScreenState
                             )
                           : IconButton(
                               tooltip: '删除模型',
-                              icon: const Icon(Icons.delete_outline,
-                                  color: AppColors.error),
+                              icon: const Icon(
+                                Icons.delete_outline,
+                                color: AppColors.error,
+                              ),
                               onPressed: () => _confirmDelete(model),
                             ),
                     ],
@@ -212,7 +220,9 @@ class _ModelManagementScreenState
               children: [
                 _buildInfoTag(Icons.tag, 'ID: ${model.modelId}'),
                 _buildInfoTag(
-                    Icons.key, model.useBuiltinKey ? '内置 Key' : '自定义 Key'),
+                  Icons.key,
+                  model.useBuiltinKey ? '内置 Key' : '自定义 Key',
+                ),
               ],
             ),
             if ((model.description ?? '').trim().isNotEmpty) ...[
@@ -228,10 +238,11 @@ class _ModelManagementScreenState
               runSpacing: 6,
               children: [
                 _buildCapabilityTag(
-                    '图片输入', model.capabilities.supportsImageInput),
+                  '图片输入',
+                  model.capabilities.supportsImageInput,
+                ),
                 _buildCapabilityTag('MCP', model.capabilities.supportsMCP),
-                _buildCapabilityTag(
-                    '流式输出', model.capabilities.enableStreaming),
+                _buildCapabilityTag('流式输出', model.capabilities.enableStreaming),
               ],
             ),
           ],
@@ -274,13 +285,13 @@ class _ModelManagementScreenState
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(enabled ? Icons.check_circle : Icons.cancel,
-              size: 14, color: color),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: AppTextStyles.labelSmall.copyWith(color: color),
+          Icon(
+            enabled ? Icons.check_circle : Icons.cancel,
+            size: 14,
+            color: color,
           ),
+          const SizedBox(width: 4),
+          Text(label, style: AppTextStyles.labelSmall.copyWith(color: color)),
         ],
       ),
     );
@@ -332,7 +343,9 @@ class _ModelManagementScreenState
 
     setState(() => _deletingModelId = model.id);
     try {
-      await ref.read(availableModelsProvider.notifier).deleteUserModel(model.id);
+      await ref
+          .read(availableModelsProvider.notifier)
+          .deleteUserModel(model.id);
       if (mounted) {
         AppSnackBar.show(context, '已删除 ${model.displayName}');
       }
@@ -394,16 +407,19 @@ class _ModelFormSheetState extends ConsumerState<ModelFormSheet> {
     super.initState();
     final initial = widget.initialModel;
     _provider = initial?.provider ?? AIProvider.deepseek; // 默认选择 DeepSeek
-    _displayNameController =
-        TextEditingController(text: initial?.displayName ?? '');
+    _displayNameController = TextEditingController(
+      text: initial?.displayName ?? '',
+    );
     _modelIdController = TextEditingController(text: initial?.modelId ?? '');
-    _descriptionController =
-        TextEditingController(text: initial?.description ?? '');
+    _descriptionController = TextEditingController(
+      text: initial?.description ?? '',
+    );
     _apiUrlController = TextEditingController(
       text: initial?.customApiUrl ?? _defaultApiUrl(_provider),
     );
-    _apiKeyController =
-        TextEditingController(text: initial?.customApiKey ?? '');
+    _apiKeyController = TextEditingController(
+      text: initial?.customApiKey ?? '',
+    );
     _maxTokensController = TextEditingController(
       text: '${initial?.capabilities.maxTokens ?? 4096}',
     );
@@ -421,7 +437,8 @@ class _ModelFormSheetState extends ConsumerState<ModelFormSheet> {
     );
 
     // 初始化验证状态
-    _validationStatus = initial?.validationStatus ?? ModelValidationStatus.pending;
+    _validationStatus =
+        initial?.validationStatus ?? ModelValidationStatus.pending;
     _lastValidatedAt = initial?.lastValidated;
     _validationErrorMessage = initial?.validationError;
 
@@ -431,7 +448,8 @@ class _ModelFormSheetState extends ConsumerState<ModelFormSheet> {
         initial.provider,
         initial.modelId,
       );
-      _lastCapabilityKey = '${initial.provider.name}:${initial.modelId.toLowerCase()}';
+      _lastCapabilityKey =
+          '${initial.provider.name}:${initial.modelId.toLowerCase()}';
     }
   }
 
@@ -533,16 +551,18 @@ class _ModelFormSheetState extends ConsumerState<ModelFormSheet> {
                       Icon(
                         _isKnownModel ? Icons.check_circle : Icons.info_outline,
                         size: 16,
-                        color: _isKnownModel ? AppColors.success : AppColors.textSecondary,
+                        color: _isKnownModel
+                            ? AppColors.success
+                            : AppColors.textSecondary,
                       ),
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
-                          _isKnownModel
-                              ? '已匹配到模型能力并自动填充'
-                              : '未找到匹配的模型，使用默认能力',
+                          _isKnownModel ? '已匹配到模型能力并自动填充' : '未找到匹配的模型，使用默认能力',
                           style: AppTextStyles.bodySmall.copyWith(
-                            color: _isKnownModel ? AppColors.success : AppColors.textSecondary,
+                            color: _isKnownModel
+                                ? AppColors.success
+                                : AppColors.textSecondary,
                           ),
                         ),
                       ),
@@ -558,8 +578,7 @@ class _ModelFormSheetState extends ConsumerState<ModelFormSheet> {
               const SizedBox(height: 16),
               TextFormField(
                 controller: _apiUrlController,
-                decoration:
-                    const InputDecoration(labelText: 'API URL'),
+                decoration: const InputDecoration(labelText: 'API URL'),
                 onChanged: (_) => _invalidateValidation(),
               ),
               const SizedBox(height: 16),
@@ -637,11 +656,14 @@ class _ModelFormSheetState extends ConsumerState<ModelFormSheet> {
                 title: Text('启用流式输出', style: AppTextStyles.bodyMedium),
                 subtitle: Text(
                   '流式输出可实时显示AI回复，关闭后将等待完整回复',
-                  style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
                 ),
               ),
               // 思考链开关（Claude 和 DeepSeek 支持）
-              if (_provider == AIProvider.claude || _provider == AIProvider.deepseek)
+              if (_provider == AIProvider.claude ||
+                  _provider == AIProvider.deepseek)
                 SwitchListTile.adaptive(
                   value: _enableThinking,
                   contentPadding: EdgeInsets.zero,
@@ -654,7 +676,9 @@ class _ModelFormSheetState extends ConsumerState<ModelFormSheet> {
                     _provider == AIProvider.deepseek
                         ? '让 AI 展示推理过程（Deep Thinking）'
                         : '让 AI 展示推理过程（Extended Thinking）',
-                    style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
                   ),
                 ),
               // 思考预算（仅 Claude 启用思考链时显示）
@@ -707,8 +731,9 @@ class _ModelFormSheetState extends ConsumerState<ModelFormSheet> {
                 children: [
                   Expanded(
                     child: OutlinedButton(
-                      onPressed:
-                          _isSaving ? null : () => Navigator.of(context).pop(false),
+                      onPressed: _isSaving
+                          ? null
+                          : () => Navigator.of(context).pop(false),
                       child: const Text('取消'),
                     ),
                   ),
@@ -717,18 +742,22 @@ class _ModelFormSheetState extends ConsumerState<ModelFormSheet> {
                     child: ElevatedButton(
                       onPressed: _isSaving ? null : _save,
                       style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary),
+                        backgroundColor: AppColors.primary,
+                      ),
                       child: _isSaving
                           ? const SizedBox(
                               width: 20,
                               height: 20,
                               child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: AppColors.surface),
+                                strokeWidth: 2,
+                                color: AppColors.surface,
+                              ),
                             )
                           : Text(
                               widget.initialModel == null ? '添加' : '保存',
-                              style: AppTextStyles.button
-                                  .copyWith(color: AppColors.surface),
+                              style: AppTextStyles.button.copyWith(
+                                color: AppColors.surface,
+                              ),
                             ),
                     ),
                   ),
@@ -802,7 +831,8 @@ class _ModelFormSheetState extends ConsumerState<ModelFormSheet> {
         supportsMCP: _supportsMCP,
         enableStreaming: _enableStreaming,
         enableThinking: _enableThinking,
-        thinkingBudgetTokens: int.tryParse(_thinkingBudgetController.text) ?? 10000,
+        thinkingBudgetTokens:
+            int.tryParse(_thinkingBudgetController.text) ?? 10000,
         maxTokens: maxTokens ?? 4096,
         contextWindow: contextWindow ?? 128000,
       ),
@@ -842,14 +872,18 @@ class _ModelFormSheetState extends ConsumerState<ModelFormSheet> {
     }
 
     final isKnown = ModelCapabilityDatabase.isKnownModel(_provider, trimmed);
-    final capabilities = ModelCapabilityDatabase.getCapabilities(_provider, trimmed);
+    final capabilities = ModelCapabilityDatabase.getCapabilities(
+      _provider,
+      trimmed,
+    );
     final hasModelChanged = normalizedKey != _lastCapabilityKey;
 
     setState(() {
       _lastCapabilityKey = normalizedKey;
       _isKnownModel = isKnown;
       // 只在模型变化且用户未手动编辑时自动填充
-      if (isKnown && (force || hasModelChanged || !_capabilitiesManuallyEdited)) {
+      if (isKnown &&
+          (force || hasModelChanged || !_capabilitiesManuallyEdited)) {
         _applyCapabilities(capabilities);
         _capabilitiesManuallyEdited = false;
       }
@@ -864,7 +898,8 @@ class _ModelFormSheetState extends ConsumerState<ModelFormSheet> {
     _supportsMCP = capabilities.supportsMCP;
     _enableStreaming = capabilities.enableStreaming;
     _enableThinking = capabilities.enableThinking;
-    _thinkingBudgetController.text = capabilities.thinkingBudgetTokens.toString();
+    _thinkingBudgetController.text = capabilities.thinkingBudgetTokens
+        .toString();
     _maxTokensController.text = capabilities.maxTokens.toString();
     _contextWindowController.text = capabilities.contextWindow.toString();
     _isApplyingCapabilities = false;
