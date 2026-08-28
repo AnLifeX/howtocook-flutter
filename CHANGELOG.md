@@ -7,9 +7,10 @@
 
 ## [Unreleased]
 
-- AI 模型新增自动、Chat Completions、Responses 和 Anthropic Messages 接口格式；DeepSeek 可按模型选择三种兼容协议。
+## [0.4.5] - 2026-08-28
 
 ### 新增
+- **多协议模型接口**：模型配置新增自动、Chat Completions、Responses 和 Anthropic Messages 格式；DeepSeek 可按模型选择三种兼容协议，并完整解析对应的流式文本、推理、工具调用和用量事件。
 - **AI 上下文状态**：聊天页显示上下文估算占用和服务商缓存命中数据；会话临近上限时提示新建会话，确认继续后自动压缩较早上下文且保留完整聊天记录。
 
 ### 变更
@@ -267,7 +268,15 @@
 ### 修复
 - 解决 AGP 8 下部分三方插件（如 `install_plugin`）缺失 `namespace` 导致的构建失败。
 
-[Unreleased]: https://github.com/Gaq152/howtocook-flutter/compare/v0.3.6...HEAD
+[Unreleased]: https://github.com/Gaq152/howtocook-flutter/compare/v0.4.5...HEAD
+[0.4.5]: https://github.com/Gaq152/howtocook-flutter/compare/v0.4.4...v0.4.5
+[0.4.4]: https://github.com/Gaq152/howtocook-flutter/compare/v0.4.3...v0.4.4
+[0.4.3]: https://github.com/Gaq152/howtocook-flutter/compare/v0.4.2...v0.4.3
+[0.4.2]: https://github.com/Gaq152/howtocook-flutter/compare/v0.4.1...v0.4.2
+[0.4.1]: https://github.com/Gaq152/howtocook-flutter/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/Gaq152/howtocook-flutter/compare/v0.3.8...v0.4.0
+[0.3.8]: https://github.com/Gaq152/howtocook-flutter/compare/v0.3.7...v0.3.8
+[0.3.7]: https://github.com/Gaq152/howtocook-flutter/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/Gaq152/howtocook-flutter/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/Gaq152/howtocook-flutter/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/Gaq152/howtocook-flutter/compare/v0.3.3...v0.3.4

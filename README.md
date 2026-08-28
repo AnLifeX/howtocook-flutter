@@ -17,7 +17,9 @@
 ### 给使用者
 
 - **菜谱体验**：10 大分类浏览；全文搜索；收藏与笔记；编辑、创建自己的菜谱。
-- **AI 助手**：多模型可选（Claude / GPT / DeepSeek），支持图片识别、流式输出、**思考链实时展示**。
+- **AI 助手**：使用自己配置的 Claude / GPT / DeepSeek 模型，支持多轮会话、图片识别、流式输出和**思考链实时展示**。
+- **长会话管理**：显示上下文窗口占用与服务商缓存命中率；临近上限时提醒新建会话，继续使用则自动压缩早期上下文。
+- **多种 API 格式**：模型可选 Chat Completions、OpenAI Responses 或 Anthropic Messages，也可自动按服务商和 URL 识别。
 - **AI 生成菜谱**：通过 MCP `create_recipe` 工具，AI 在对话里直接生成菜谱卡片并一键入库。
 - **二维码分享**：扫码导入朋友分享的菜谱，或把自己的菜谱生成二维码分享出去。
 - **教程体系**：基础、进阶、学习三档烹饪教程，可自创。
@@ -29,7 +31,7 @@
 - **Clean Architecture + Feature-Based**：每个功能模块严格分 Domain / Application / Infrastructure / Presentation 四层。
 - **双存储策略**：Hive（全平台键值）＋ Sqflite（移动/桌面端关系型），按场景分工。
 - **大量代码生成**：Freezed / JSON / Riverpod / Hive Adapter 全部由 `build_runner` 产出。
-- **AI 适配器模式**：`ClaudeAdapter` / `OpenAIAdapter` / `DeepSeekAdapter` 统一接口，切换模型零侵入业务代码。
+- **AI 适配器模式**：`ClaudeAdapter` / `OpenAIAdapter` / `DeepSeekAdapter` 统一接口，兼容 Chat Completions、Responses 与 Anthropic Messages，并采集上下文缓存用量。
 - **Release 自签与自升级**：独立 keystore，CI 与本地共享密钥；Release 页产物自动生成 `manifest.json`，客户端自动更新直连消费。
 
 ## 🧱 技术栈
