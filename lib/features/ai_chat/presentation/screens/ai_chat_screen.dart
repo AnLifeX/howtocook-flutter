@@ -21,9 +21,11 @@ import '../../domain/entities/chat_message.dart';
 import '../../domain/entities/conversation.dart';
 import '../../domain/entities/ai_usage_metrics.dart';
 import '../../domain/entities/conversation_context_state.dart';
+import '../../domain/entities/recipe_data_mode.dart';
 import '../../infrastructure/repositories/conversation_repository.dart';
 import '../../infrastructure/services/ai_service_factory.dart';
 import '../../infrastructure/services/mcp_service.dart';
+import '../../infrastructure/services/recipe_tool_service.dart';
 import '../../infrastructure/services/recipe_recognizer.dart';
 import '../../infrastructure/services/tip_recognizer.dart';
 import '../widgets/conversation_drawer.dart';
@@ -69,6 +71,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
   final List<ChatMessage> _messages = [];
   final ImagePicker _imagePicker = ImagePicker();
   final MCPService _mcpService = MCPService();
+  late final RecipeToolService _recipeToolService;
   late final RecipeRecognizer _recipeRecognizer;
   late final TipRecognizer _tipRecognizer;
 
@@ -79,7 +82,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
   String? _aiStatusText;
   bool _shouldStopStreaming = false;
   String? _selectedImagePath;
-  List<Map<String, dynamic>>? _mcpTools;
+  List<Map<String, dynamic>> _mcpTools = const [];
   // 新创建的食谱（用于在聊天中显示卡片和跳转到预览页面）
   final Map<String, Recipe> _createdRecipes = {};
   // MCP 工具调用历史（仅 debug 模式）
@@ -108,10 +111,12 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
 当前模型无法访问应用菜谱库或创建食谱；需要这些能力时，简短说明并建议用户切换到支持工具调用的模型，或前往菜谱页面搜索。''';
     }
 
-    return '''你是“小厨”，专业、亲切、重视食品安全的烹饪助手，可以访问“程序员做饭指南”菜谱库。
+    final mode = _contextState.recipeDataMode;
+    return '''你是“小厨”，专业、亲切、重视食品安全的烹饪助手，可以通过应用内置工具访问菜谱。
+当前会话使用${mode.label}模式：${mode.description}。
 涉及菜谱库、具体食谱、推荐或创建食谱时优先使用合适的工具；普通烹饪常识可直接回答。
 工具结果要整理成自然语言，不输出原始 JSON；可补充实用技巧和风险提示。
-搜索食谱时先用 getAllRecipes 获取稳定 UUID，再将原 UUID 传给 getRecipeById，不得改写。
+搜索食谱时先用 searchRecipes 获取原始 ID，需要完整做法时再将原 ID 传给 getRecipeById，不得改写。
 创建成功后在回复中提及食谱名称，客户端会显示可预览和保存的卡片。
 结合消息末尾提供的当前时间判断季节、餐次和时令。''';
   }
@@ -142,6 +147,10 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
   @override
   void initState() {
     super.initState();
+    _recipeToolService = RecipeToolService(
+      localRepository: ref.read(recipeRepositoryProvider),
+      cloudService: _mcpService,
+    );
     final dataLoader = BundledDataLoader();
     _recipeRecognizer = RecipeRecognizer(dataLoader);
     _tipRecognizer = TipRecognizer(dataLoader);
@@ -151,39 +160,17 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
   }
 
   /// 加载 MCP 工具列表
-  Future<void> _loadMCPTools() async {
-    try {
-      final tools = await _mcpService.listTools();
-
-      // 转换工具格式：MCP 使用 inputSchema，Claude API 需要 input_schema
-      final convertedTools =
-          tools.map((tool) {
-            final converted = Map<String, dynamic>.from(tool);
-            if (converted.containsKey('inputSchema')) {
-              converted['input_schema'] = converted.remove('inputSchema');
-            }
-            if (converted['name'] == 'mcp_howtocook_createRecipe') {
-              converted['description'] =
-                  '创建完整的 HowToCook V2 菜谱，保留简介、热量、必备项、用量与计算、表格和无自带序号的操作。';
-              converted['input_schema'] = _v2CreateRecipeInputSchema;
-            }
-            return Map<String, dynamic>.from(
-              _canonicalizeJson(converted) as Map,
-            );
-          }).toList()..sort(
-            (a, b) => (a['name'] ?? '').toString().compareTo(
-              (b['name'] ?? '').toString(),
-            ),
-          );
-
-      setState(() {
-        _mcpTools = convertedTools;
-      });
-      debugPrint('MCP tools loaded: ${tools.length} tools');
-    } catch (e) {
-      debugPrint('Failed to load MCP tools: $e');
-      // MCP 工具加载失败不影响基本聊天功能
-    }
+  void _loadMCPTools() {
+    assert(_v2CreateRecipeInputSchema['type'] == 'object');
+    _mcpTools = _recipeToolService
+        .definitionsFor(_contextState.recipeDataMode)
+        .map(
+          (tool) => Map<String, dynamic>.from(_canonicalizeJson(tool) as Map),
+        )
+        .toList();
+    debugPrint(
+      'Recipe tools loaded: ${_mcpTools.length} (${_contextState.recipeDataMode.name})',
+    );
   }
 
   dynamic _canonicalizeJson(dynamic value) {
@@ -377,6 +364,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
           }
         }
       });
+      _loadMCPTools();
 
       debugPrint(
         'Loaded ${_messages.length} messages, ${_createdRecipes.length} recipes for $conversationId',
@@ -588,7 +576,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
     for (final message in _messages.skip(start)) {
       tokens += _estimateMessageTokens(message);
     }
-    if (model.capabilities.supportsMCP && _mcpTools != null) {
+    if (model.capabilities.supportsMCP && _mcpTools.isNotEmpty) {
       tokens += _estimateTextTokens(jsonEncode(_mcpTools));
     }
     return tokens;
@@ -776,6 +764,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
         ),
         centerTitle: false,
         actions: [
+          _buildDataModeSelector(),
           IconButton(
             icon: const Icon(Icons.delete_outline),
             tooltip: '清空聊天记录',
@@ -819,6 +808,52 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
             )
           : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.startTop,
+    );
+  }
+
+  Widget _buildDataModeSelector() {
+    return PopupMenuButton<RecipeDataMode>(
+      tooltip: '菜谱数据：${_contextState.recipeDataMode.label}',
+      enabled: !_isLoading,
+      initialValue: _contextState.recipeDataMode,
+      onSelected: _setRecipeDataMode,
+      itemBuilder: (context) => RecipeDataMode.values
+          .map(
+            (mode) => PopupMenuItem(
+              value: mode,
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  mode == RecipeDataMode.local
+                      ? Icons.phone_android
+                      : Icons.cloud_outlined,
+                ),
+                title: Text(mode.label),
+                subtitle: Text(mode.description),
+              ),
+            ),
+          )
+          .toList(),
+      icon: Icon(
+        _contextState.recipeDataMode == RecipeDataMode.local
+            ? Icons.phone_android
+            : Icons.cloud_outlined,
+      ),
+    );
+  }
+
+  Future<void> _setRecipeDataMode(RecipeDataMode mode) async {
+    if (mode == _contextState.recipeDataMode || _isLoading) return;
+    setState(() {
+      _contextState = _contextState.copyWith(recipeDataMode: mode);
+      _loadMCPTools();
+    });
+    await _saveChatHistory();
+    if (!mounted) return;
+    AppSnackBar.show(
+      context,
+      '已切换为${mode.label}模式',
+      bottomOffset: AppSnackBar.kChatBottomOffset,
     );
   }
 
@@ -1366,6 +1401,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
     final clean = toolName.replaceFirst('mcp_howtocook_', '');
     return switch (clean) {
       'getRecipeById' => '搜索菜谱中...',
+      'searchRecipes' => '搜索菜谱中...',
       'getAllRecipes' => '获取菜谱列表中...',
       'getRecipesByCategory' => '查询分类中...',
       'createRecipe' => '创建食谱中...',
@@ -1690,8 +1726,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
       // 检查模型是否支持工具调用（在生成 system prompt 之前）
       final modelInfo = await aiService.getModelInfo();
       final supportsTools = modelInfo['supports_tools'] == true;
-      final shouldUseMcpTools =
-          _mcpTools != null && _mcpTools!.isNotEmpty && supportsTools;
+      final shouldUseMcpTools = _mcpTools.isNotEmpty && supportsTools;
 
       // 在第一条消息前添加 system prompt（根据模型能力动态生成）
       var history = [
@@ -1723,7 +1758,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
       // MCP 工具调用循环
       if (shouldUseMcpTools) {
         debugPrint(
-          'Starting MCP tool calling loop with ${_mcpTools!.length} tools',
+          'Starting recipe tool calling loop with ${_mcpTools.length} tools',
         );
 
         // 使用非流式API进行工具调用循环（最多10轮）
@@ -2330,232 +2365,252 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
     String? errorMessage;
 
     try {
-      switch (cleanToolName) {
-        case 'getAllRecipes':
-          final recipes = await _mcpService.getAllRecipes();
-          result = {
-            'success': true,
-            'recipes': recipes.map((r) => r.toJson()).toList(),
-            'count': recipes.length,
-          };
-          break;
-
-        case 'getRecipesByCategory':
-          // 支持多种参数名
-          final categoryValue = input['category'] ?? input['categoryName'];
-          final category = categoryValue?.toString();
-          if (category == null || category.isEmpty) {
-            throw Exception('Missing required parameter: category');
-          }
-          final recipes = await _mcpService.getRecipesByCategory(category);
-          result = {
-            'success': true,
-            'category': category,
-            'recipes': recipes.map((r) => r.toJson()).toList(),
-            'count': recipes.length,
-          };
-          break;
-
-        case 'getRecipeById':
-          // 支持多种参数名：query, id, recipeId, recipeName
-          final queryValue =
-              input['query'] ??
-              input['id'] ??
-              input['recipeId'] ??
-              input['recipeName'];
-          final query = queryValue?.toString();
-          if (query == null || query.isEmpty) {
-            throw Exception('Missing required parameter: query/id');
-          }
-
-          // 检查是否是生成的 ID（格式：recipe_数字）
-          if (query.startsWith('recipe_')) {
+      final executionInput = Map<String, dynamic>.from(input);
+      if (cleanToolName == 'createRecipe' &&
+          executionInput['recipeText'] == null &&
+          executionInput['recipe'] is Map) {
+        executionInput['recipeText'] = _legacyCompatibleRecipeText(
+          Map<String, dynamic>.from(executionInput['recipe'] as Map),
+        );
+      }
+      final appResult = await _recipeToolService.execute(
+        mode: _contextState.recipeDataMode,
+        toolName: cleanToolName,
+        input: executionInput,
+      );
+      // 创建工具还需在聊天页生成可预览卡片；其他工具直接使用统一执行器结果。
+      if (cleanToolName != 'createRecipe' || appResult['success'] != true) {
+        result = appResult;
+      }
+      if (result == null) {
+        switch (cleanToolName) {
+          case 'getAllRecipes':
+            final recipes = await _mcpService.getAllRecipes();
             result = {
-              'success': false,
-              'error':
-                  'Generated ID "$query" cannot be used for detail query. '
-                  'Please use the recipe name instead. '
-                  'Example: Use "红烧肉" instead of "$query".',
+              'success': true,
+              'recipes': recipes.map((r) => r.toJson()).toList(),
+              'count': recipes.length,
             };
             break;
-          }
 
-          final recipeResult = await _mcpService.getRecipeById(query);
-          if (recipeResult is Recipe) {
-            result = {'success': true, 'recipe': recipeResult.toJson()};
-          } else if (recipeResult is Map<String, dynamic>) {
-            if (recipeResult.containsKey('possibleMatches')) {
-              result = {'success': false, 'exactMatch': false, ...recipeResult};
-            } else {
-              result = {'success': false, ...recipeResult};
+          case 'getRecipesByCategory':
+            // 支持多种参数名
+            final categoryValue = input['category'] ?? input['categoryName'];
+            final category = categoryValue?.toString();
+            if (category == null || category.isEmpty) {
+              throw Exception('Missing required parameter: category');
             }
-          } else {
-            result = {'success': false, 'error': recipeResult.toString()};
-          }
-          break;
-
-        case 'recommendMeals':
-          // 支持多种参数名：peopleCount, numberOfPeople, people
-          final peopleCount = _parseIntParam(
-            input['peopleCount'] ?? input['numberOfPeople'] ?? input['people'],
-            defaultValue: 2,
-          );
-          final allergies = input['allergies'] as List<dynamic>?;
-          final avoidItems = input['avoidItems'] as List<dynamic>?;
-
-          final mealsResult = await _mcpService.recommendMeals(
-            peopleCount: peopleCount,
-            allergies: allergies?.cast<String>(),
-            avoidItems: avoidItems?.cast<String>(),
-          );
-          result = {'success': true, ...mealsResult};
-          break;
-
-        case 'whatToEat':
-          // 支持多种参数名：peopleCount, numberOfPeople, people
-          // 如果没有提供参数，默认2人
-          final peopleCount = _parseIntParam(
-            input['peopleCount'] ?? input['numberOfPeople'] ?? input['people'],
-            defaultValue: 2,
-          );
-          debugPrint('whatToEat with peopleCount: $peopleCount');
-
-          final recipes = await _mcpService.whatToEat(peopleCount: peopleCount);
-          result = {
-            'success': true,
-            'recipes': recipes.map((r) => r.toJson()).toList(),
-            'count': recipes.length,
-            'peopleCount': peopleCount,
-          };
-          break;
-
-        case 'createRecipe':
-          final structuredRecipe = input['recipe'] is Map
-              ? Map<String, dynamic>.from(input['recipe'] as Map)
-              : null;
-          final recipeTextValue = input['recipeText'] ?? input['text'];
-          final recipeText = recipeTextValue?.toString();
-          if (structuredRecipe == null &&
-              (recipeText == null || recipeText.trim().isEmpty)) {
-            throw Exception('Missing required parameter: recipe or recipeText');
-          }
-          final checkDuplicate = input['checkDuplicate'] as bool? ?? true;
-          final similarityThreshold =
-              (input['similarityThreshold'] as num?)?.toDouble() ?? 0.75;
-          final compatibilityRecipeText =
-              recipeText ??
-              (structuredRecipe == null
-                  ? null
-                  : _legacyCompatibleRecipeText(structuredRecipe));
-          final createResult = await _mcpService.createRecipe(
-            // 旧线上 MCP 只接受 recipeText；新 MCP 优先使用 recipe。
-            recipeText: compatibilityRecipeText,
-            recipe: structuredRecipe,
-            checkDuplicate: checkDuplicate,
-            similarityThreshold: similarityThreshold,
-          );
-          if (createResult['recipe'] is Map) {
-            final recipeData = Map<String, dynamic>.from(
-              createResult['recipe'] as Map,
-            );
-            if (structuredRecipe != null) {
-              // 旧 MCP 会丢弃 V2 字段，以模型的原始结构化输入补回。
-              recipeData.addAll(structuredRecipe);
-            }
-            final rawId = recipeData['id']?.toString() ?? '';
-            final isUuid = RegExp(
-              r'^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-              caseSensitive: false,
-            ).hasMatch(rawId);
-            final recipeId = isUuid ? rawId : const Uuid().v4();
-            final ingredients = (recipeData['ingredients'] as List? ?? []).map((
-              item,
-            ) {
-              if (item is Map) {
-                final value = Map<String, dynamic>.from(item);
-                final rawText =
-                    (value['text'] ??
-                            value['text_quantity'] ??
-                            value['name'] ??
-                            '')
-                        .toString();
-                final name =
-                    (value['name'] ?? rawText.split(RegExp(r'\s+')).first)
-                        .toString();
-                return {
-                  ...value,
-                  'name': name,
-                  'text': completeIngredientText(name, rawText),
-                  'optional': value['optional'] == true,
-                };
-              }
-              final text = item.toString();
-              return {'name': text.split(RegExp(r'\s+')).first, 'text': text};
-            }).toList();
-            final steps = (recipeData['steps'] as List? ?? []).map((item) {
-              if (item is Map) {
-                final value = Map<String, dynamic>.from(item);
-                return {
-                  ...value,
-                  'kind': value['kind'] ?? 'step',
-                  'description': (value['description'] ?? '').toString(),
-                };
-              }
-              return {'kind': 'step', 'description': item.toString()};
-            }).toList();
-            final additionalNotes = recipeData['additional_notes'];
-            final sanitizedData = <String, dynamic>{
-              ...recipeData,
-              'schemaVersion': 2,
-              'id': recipeId,
-              'legacyIds': recipeData['legacyIds'] ?? const <String>[],
-              'name': (recipeData['name'] ?? '未命名食谱').toString().replaceFirst(
-                RegExp(r'的做法$'),
-                '',
-              ),
-              'description': recipeData['description'],
-              'category': _normalizeRecipeCategory(recipeData),
-              'categoryName': _normalizeRecipeCategoryName(recipeData),
-              'difficulty': recipeData['difficulty'] ?? 3,
-              'estimatedCaloriesKcal': _parsePositiveIntOrNull(
-                recipeData['estimatedCaloriesKcal'],
-              ),
-              'requirements': recipeData['requirements'] ?? const [],
-              'ingredients': ingredients,
-              'tools': recipeData['tools'] ?? const [],
-              'calculationNotes': recipeData['calculationNotes'] ?? const [],
-              'steps': steps,
-              'tips':
-                  recipeData['tips'] ??
-                  (additionalNotes is List
-                      ? additionalNotes.join('\n')
-                      : additionalNotes),
-              'warnings': recipeData['warnings'] ?? const [],
-              'images': recipeData['images'] ?? const [],
-              'externalImages': recipeData['externalImages'] ?? const [],
-              'hash': recipeData['hash'] ?? recipeId,
-              'source': RecipeSource.aiGenerated.name,
-            };
-            final recipe = Recipe.fromJson(
-              sanitizedData,
-            ).copyWith(source: RecipeSource.aiGenerated);
-            setState(() => _createdRecipes[recipe.id] = recipe);
-            _saveCreatedRecipes();
+            final recipes = await _mcpService.getRecipesByCategory(category);
             result = {
-              ...createResult,
               'success': true,
-              'recipe': recipe.toJson(),
+              'category': category,
+              'recipes': recipes.map((r) => r.toJson()).toList(),
+              'count': recipes.length,
             };
-          } else {
-            result = {
-              ...createResult,
-              'success': createResult['success'] == true,
-            };
-          }
-          break;
+            break;
 
-        default:
-          throw Exception('Unknown MCP tool: $cleanToolName');
+          case 'getRecipeById':
+            // 支持多种参数名：query, id, recipeId, recipeName
+            final queryValue =
+                input['query'] ??
+                input['id'] ??
+                input['recipeId'] ??
+                input['recipeName'];
+            final query = queryValue?.toString();
+            if (query == null || query.isEmpty) {
+              throw Exception('Missing required parameter: query/id');
+            }
+
+            // 检查是否是生成的 ID（格式：recipe_数字）
+            if (query.startsWith('recipe_')) {
+              result = {
+                'success': false,
+                'error':
+                    'Generated ID "$query" cannot be used for detail query. '
+                    'Please use the recipe name instead. '
+                    'Example: Use "红烧肉" instead of "$query".',
+              };
+              break;
+            }
+
+            final recipeResult = await _mcpService.getRecipeById(query);
+            if (recipeResult is Recipe) {
+              result = {'success': true, 'recipe': recipeResult.toJson()};
+            } else if (recipeResult is Map<String, dynamic>) {
+              if (recipeResult.containsKey('possibleMatches')) {
+                result = {
+                  'success': false,
+                  'exactMatch': false,
+                  ...recipeResult,
+                };
+              } else {
+                result = {'success': false, ...recipeResult};
+              }
+            } else {
+              result = {'success': false, 'error': recipeResult.toString()};
+            }
+            break;
+
+          case 'recommendMeals':
+            // 支持多种参数名：peopleCount, numberOfPeople, people
+            final peopleCount = _parseIntParam(
+              input['peopleCount'] ??
+                  input['numberOfPeople'] ??
+                  input['people'],
+              defaultValue: 2,
+            );
+            final allergies = input['allergies'] as List<dynamic>?;
+            final avoidItems = input['avoidItems'] as List<dynamic>?;
+
+            final mealsResult = await _mcpService.recommendMeals(
+              peopleCount: peopleCount,
+              allergies: allergies?.cast<String>(),
+              avoidItems: avoidItems?.cast<String>(),
+            );
+            result = {'success': true, ...mealsResult};
+            break;
+
+          case 'whatToEat':
+            // 支持多种参数名：peopleCount, numberOfPeople, people
+            // 如果没有提供参数，默认2人
+            final peopleCount = _parseIntParam(
+              input['peopleCount'] ??
+                  input['numberOfPeople'] ??
+                  input['people'],
+              defaultValue: 2,
+            );
+            debugPrint('whatToEat with peopleCount: $peopleCount');
+
+            final recipes = await _mcpService.whatToEat(
+              peopleCount: peopleCount,
+            );
+            result = {
+              'success': true,
+              'recipes': recipes.map((r) => r.toJson()).toList(),
+              'count': recipes.length,
+              'peopleCount': peopleCount,
+            };
+            break;
+
+          case 'createRecipe':
+            final structuredRecipe = input['recipe'] is Map
+                ? Map<String, dynamic>.from(input['recipe'] as Map)
+                : null;
+            final recipeTextValue = input['recipeText'] ?? input['text'];
+            final recipeText = recipeTextValue?.toString();
+            if (structuredRecipe == null &&
+                (recipeText == null || recipeText.trim().isEmpty)) {
+              throw Exception(
+                'Missing required parameter: recipe or recipeText',
+              );
+            }
+            final createResult = appResult;
+            if (createResult['recipe'] is Map) {
+              final recipeData = Map<String, dynamic>.from(
+                createResult['recipe'] as Map,
+              );
+              if (structuredRecipe != null) {
+                // 旧 MCP 会丢弃 V2 字段，以模型的原始结构化输入补回。
+                recipeData.addAll(structuredRecipe);
+              }
+              final rawId = recipeData['id']?.toString() ?? '';
+              final isUuid = RegExp(
+                r'^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                caseSensitive: false,
+              ).hasMatch(rawId);
+              final recipeId = isUuid ? rawId : const Uuid().v4();
+              final ingredients = (recipeData['ingredients'] as List? ?? [])
+                  .map((item) {
+                    if (item is Map) {
+                      final value = Map<String, dynamic>.from(item);
+                      final rawText =
+                          (value['text'] ??
+                                  value['text_quantity'] ??
+                                  value['name'] ??
+                                  '')
+                              .toString();
+                      final name =
+                          (value['name'] ?? rawText.split(RegExp(r'\s+')).first)
+                              .toString();
+                      return {
+                        ...value,
+                        'name': name,
+                        'text': completeIngredientText(name, rawText),
+                        'optional': value['optional'] == true,
+                      };
+                    }
+                    final text = item.toString();
+                    return {
+                      'name': text.split(RegExp(r'\s+')).first,
+                      'text': text,
+                    };
+                  })
+                  .toList();
+              final steps = (recipeData['steps'] as List? ?? []).map((item) {
+                if (item is Map) {
+                  final value = Map<String, dynamic>.from(item);
+                  return {
+                    ...value,
+                    'kind': value['kind'] ?? 'step',
+                    'description': (value['description'] ?? '').toString(),
+                  };
+                }
+                return {'kind': 'step', 'description': item.toString()};
+              }).toList();
+              final additionalNotes = recipeData['additional_notes'];
+              final sanitizedData = <String, dynamic>{
+                ...recipeData,
+                'schemaVersion': 2,
+                'id': recipeId,
+                'legacyIds': recipeData['legacyIds'] ?? const <String>[],
+                'name': (recipeData['name'] ?? '未命名食谱').toString().replaceFirst(
+                  RegExp(r'的做法$'),
+                  '',
+                ),
+                'description': recipeData['description'],
+                'category': _normalizeRecipeCategory(recipeData),
+                'categoryName': _normalizeRecipeCategoryName(recipeData),
+                'difficulty': recipeData['difficulty'] ?? 3,
+                'estimatedCaloriesKcal': _parsePositiveIntOrNull(
+                  recipeData['estimatedCaloriesKcal'],
+                ),
+                'requirements': recipeData['requirements'] ?? const [],
+                'ingredients': ingredients,
+                'tools': recipeData['tools'] ?? const [],
+                'calculationNotes': recipeData['calculationNotes'] ?? const [],
+                'steps': steps,
+                'tips':
+                    recipeData['tips'] ??
+                    (additionalNotes is List
+                        ? additionalNotes.join('\n')
+                        : additionalNotes),
+                'warnings': recipeData['warnings'] ?? const [],
+                'images': recipeData['images'] ?? const [],
+                'externalImages': recipeData['externalImages'] ?? const [],
+                'hash': recipeData['hash'] ?? recipeId,
+                'source': RecipeSource.aiGenerated.name,
+              };
+              final recipe = Recipe.fromJson(
+                sanitizedData,
+              ).copyWith(source: RecipeSource.aiGenerated);
+              setState(() => _createdRecipes[recipe.id] = recipe);
+              _saveCreatedRecipes();
+              result = {
+                ...createResult,
+                'success': true,
+                'recipe': recipe.toJson(),
+              };
+            } else {
+              result = {
+                ...createResult,
+                'success': createResult['success'] == true,
+              };
+            }
+            break;
+
+          default:
+            throw Exception('Unknown MCP tool: $cleanToolName');
+        }
       }
     } catch (e, stackTrace) {
       debugPrint('MCP tool execution error: $e');
