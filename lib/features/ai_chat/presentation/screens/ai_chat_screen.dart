@@ -599,9 +599,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
 
   int _effectiveContextTokens(AIModelConfig model) {
     final localEstimate = _estimatedContextTokens(model);
-    final providerEstimate =
-        _contextState.lastInputTokens + _contextState.lastOutputTokens;
-    return localEstimate >= providerEstimate ? localEstimate : providerEstimate;
+    return _contextState.currentContextTokens(localEstimate);
   }
 
   double _contextRatioForModel(AIModelConfig model) {
@@ -1132,7 +1130,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
                 children: [
                   Expanded(
                     child: Text(
-                      '预计下次请求上下文',
+                      '当前累计上下文',
                       style: AppTextStyles.bodySmall.copyWith(
                         color: AppColors.textSecondary,
                       ),
@@ -1160,7 +1158,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
               const SizedBox(height: 8),
               Text(
                 _contextState.lastInputTokens > 0
-                    ? '最近一次实际请求：输入 ${_formatTokenCount(_contextState.lastInputTokens)}，输出 ${_formatTokenCount(_contextState.lastOutputTokens)} tokens'
+                    ? '最近一次完整输入 ${_formatTokenCount(_contextState.lastInputTokens)}，本轮输出 ${_formatTokenCount(_contextState.lastOutputTokens)} tokens'
                     : '服务商尚未返回本会话的 token 用量数据',
                 style: AppTextStyles.bodySmall,
               ),
@@ -1168,7 +1166,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
               Text(
                 cacheRate == null
                     ? '缓存命中：暂无数据（部分中转服务不会返回）'
-                    : '累计 API 输入流量 ${_formatTokenCount(cumulativeInput)}：缓存命中 ${(cacheRate * 100).toStringAsFixed(1)}%，命中 ${_formatTokenCount(_contextState.totalCacheReadTokens)}，未命中 ${_formatTokenCount(_contextState.totalCacheMissTokens)} tokens',
+                    : '累计 API 输入流量 ${_formatTokenCount(cumulativeInput)}（不计入窗口）：缓存命中 ${(cacheRate * 100).toStringAsFixed(1)}%，命中 ${_formatTokenCount(_contextState.totalCacheReadTokens)}，未命中 ${_formatTokenCount(_contextState.totalCacheMissTokens)} tokens',
                 style: AppTextStyles.bodySmall,
               ),
               if (_contextState.hasSummary) ...[

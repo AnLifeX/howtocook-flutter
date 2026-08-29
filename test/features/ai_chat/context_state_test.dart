@@ -37,12 +37,53 @@ void main() {
     );
 
     expect(state.lastInputTokens, 1000);
+    expect(state.lastCacheReadTokens, 750);
+    expect(state.lastCacheMissTokens, 250);
     expect(state.totalCacheReadTokens, 750);
     expect(state.cacheHitRate, 0.75);
     expect(
       ConversationContextState.fromJson(state.toJson()).cacheHitRate,
       0.75,
     );
+  });
+
+  test('compatible gateways with separated cache input are normalized', () {
+    const usage = AIUsageMetrics(
+      inputTokens: 13000,
+      outputTokens: 411,
+      cacheReadTokens: 106000,
+    );
+
+    expect(usage.effectiveInputTokens, 119000);
+    expect(usage.effectiveCacheMissTokens, 13000);
+
+    final restored = ConversationContextState.fromJson(
+      const ConversationContextState().recordUsage(usage).toJson(),
+    );
+    expect(restored.lastInputTokens, 119000);
+    expect(restored.lastCacheReadTokens, 106000);
+    expect(restored.lastCacheMissTokens, 13000);
+  });
+
+  test('standard provider input already includes cached tokens', () {
+    const usage = AIUsageMetrics(
+      inputTokens: 13000,
+      outputTokens: 411,
+      cacheReadTokens: 10000,
+    );
+
+    expect(usage.effectiveInputTokens, 13000);
+    expect(usage.effectiveCacheMissTokens, 3000);
+  });
+
+  test('current context includes full history and latest output', () {
+    const state = ConversationContextState(
+      lastInputTokens: 119000,
+      lastOutputTokens: 411,
+    );
+
+    expect(state.currentContextTokens(20000), 119411);
+    expect(state.currentContextTokens(125000), 125000);
   });
 
   test('the app no longer ships built-in AI models', () {
