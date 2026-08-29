@@ -141,7 +141,7 @@ class RecipeToolService {
   static final List<Map<String, dynamic>> _commonTools = [
     _tool(
       'searchRecipes',
-      '搜索当前数据模式的菜谱。返回最多 20 条精简摘要；需要做法时再调用 getRecipeById。',
+      '搜索当前数据模式的菜谱。返回最多 20 条精简摘要；truncated=true 表示结果不完整，不得据此断言某菜谱不存在。零结果时先用精简菜名或主要食材复查，需要做法时再调用 getRecipeById。',
       {
         'type': 'object',
         'properties': {
@@ -264,6 +264,12 @@ class RecipeToolService {
         var recipes = query.isEmpty
             ? await _localRepository.getAllRecipes()
             : await _localRepository.searchRecipes(query);
+        if (query.isNotEmpty && recipes.isEmpty) {
+          recipes = _fallbackLocalSearch(
+            await _localRepository.getAllRecipes(),
+            query,
+          );
+        }
         recipes = _filterCategory(recipes, _string(input['category']));
         return _listResult(recipes, input, query: query);
       case 'getRecipesByCategory':
@@ -444,8 +450,9 @@ class RecipeToolService {
     String? category,
     int? peopleCount,
   }) {
-    final limit = _int(input['limit'], 10, 1, maxListResults);
+    final limit = _int(input['limit'], maxListResults, 1, maxListResults);
     final items = recipes.take(limit).map(_summary).toList();
+    final truncated = recipes.length > items.length;
     return {
       'success': true,
       if (query != null) 'query': query,
@@ -454,7 +461,9 @@ class RecipeToolService {
       'recipes': items,
       'count': items.length,
       'totalMatches': recipes.length,
-      'truncated': recipes.length > items.length,
+      'truncated': truncated,
+      'resultCoverage': truncated ? 'partial' : 'complete',
+      if (truncated) 'warning': '结果已截断，不能据此判断未返回的菜谱不存在',
     };
   }
 
@@ -487,6 +496,45 @@ class RecipeToolService {
           recipe.categoryName.toLowerCase() == normalized;
     }).toList();
   }
+
+  List<Recipe> _fallbackLocalSearch(List<Recipe> recipes, String query) {
+    final variants = _searchVariants(query);
+    return recipes.where((recipe) {
+      final haystack = _normalizeSearchText(
+        [
+          recipe.name,
+          recipe.categoryName,
+          recipe.description ?? '',
+          ...recipe.ingredients.map((ingredient) => ingredient.text),
+        ].join(' '),
+      );
+      return variants.any(haystack.contains);
+    }).toList();
+  }
+
+  Set<String> _searchVariants(String query) {
+    final normalized = _normalizeSearchText(query);
+    final variants = <String>{normalized};
+    const aliases = <String, String>{
+      '西红柿': '番茄',
+      '番茄': '西红柿',
+      '马铃薯': '土豆',
+      '土豆': '马铃薯',
+      '花菜': '菜花',
+      '菜花': '花菜',
+    };
+    for (final entry in aliases.entries) {
+      if (normalized.contains(entry.key)) {
+        variants.add(normalized.replaceAll(entry.key, entry.value));
+      }
+    }
+    return variants.where((term) => term.isNotEmpty).toSet();
+  }
+
+  String _normalizeSearchText(String value) => value.toLowerCase().replaceAll(
+    RegExp(r'[\s\p{P}\p{S}]+', unicode: true),
+    '',
+  );
 
   static Map<String, dynamic> _tool(
     String name,

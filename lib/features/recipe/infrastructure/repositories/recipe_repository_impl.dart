@@ -155,31 +155,46 @@ class RecipeRepositoryImpl implements RecipeRepository {
       final allRecipes = await getAllRecipes();
 
       // 2. 过滤：名称、分类名称、食材包含关键词
-      final lowerQuery = query.toLowerCase();
+      final searchTerms = _searchVariants(query);
       return allRecipes.where((recipe) {
-        // 搜索菜谱名称
-        if (recipe.name.toLowerCase().contains(lowerQuery)) {
-          return true;
-        }
-
-        // 搜索分类名称
-        if (recipe.categoryName.toLowerCase().contains(lowerQuery)) {
-          return true;
-        }
-
-        // 搜索食材
-        for (final ingredient in recipe.ingredients) {
-          if (ingredient.text.toLowerCase().contains(lowerQuery)) {
-            return true;
-          }
-        }
-
-        return false;
+        final haystack = _normalizeSearchText(
+          [
+            recipe.name,
+            recipe.categoryName,
+            recipe.description ?? '',
+            ...recipe.ingredients.map((ingredient) => ingredient.text),
+          ].join(' '),
+        );
+        return searchTerms.any(haystack.contains);
       }).toList();
     } catch (e) {
       throw Exception('Failed to search recipes: $e');
     }
   }
+
+  Set<String> _searchVariants(String query) {
+    final normalized = _normalizeSearchText(query);
+    final variants = <String>{normalized};
+    const aliases = <String, String>{
+      '西红柿': '番茄',
+      '番茄': '西红柿',
+      '马铃薯': '土豆',
+      '土豆': '马铃薯',
+      '花菜': '菜花',
+      '菜花': '花菜',
+    };
+    for (final entry in aliases.entries) {
+      if (normalized.contains(entry.key)) {
+        variants.add(normalized.replaceAll(entry.key, entry.value));
+      }
+    }
+    return variants.where((term) => term.isNotEmpty).toSet();
+  }
+
+  String _normalizeSearchText(String value) => value.toLowerCase().replaceAll(
+    RegExp(r'[\s\p{P}\p{S}]+', unicode: true),
+    '',
+  );
 
   @override
   Future<List<Recipe>> getFavoriteRecipes() async {

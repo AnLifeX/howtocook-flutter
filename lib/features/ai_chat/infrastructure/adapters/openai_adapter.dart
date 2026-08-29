@@ -17,6 +17,7 @@ class OpenAIAdapter implements AIService {
   final String? customApiUrl;
   final AIAPIFormat apiFormat;
   final bool enableThinking;
+  final bool supportsImageInput;
 
   /// 默认 OpenAI API 地址
   static const String defaultApiUrl = 'https://api.openai.com/v1';
@@ -27,6 +28,7 @@ class OpenAIAdapter implements AIService {
     this.customApiUrl,
     this.apiFormat = AIAPIFormat.auto,
     this.enableThinking = false,
+    this.supportsImageInput = false,
   }) : _dio = Dio() {
     final baseUrl = _normalizeBaseUrl(customApiUrl ?? defaultApiUrl);
     _dio.options.baseUrl = baseUrl;
@@ -276,8 +278,7 @@ class OpenAIAdapter implements AIService {
       'provider': 'openai',
       'model_id': modelId,
       'supports_streaming': true,
-      'supports_vision':
-          modelId.contains('gpt-4') && modelId.contains('vision'),
+      'supports_vision': supportsImageInput,
       'supports_tools': true,
     };
   }

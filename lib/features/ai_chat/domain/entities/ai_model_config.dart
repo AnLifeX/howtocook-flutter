@@ -121,3 +121,9 @@ class APICallRecord extends HiveObject {
     required this.provider,
   });
 }
+
+extension AIModelConfigCapabilities on AIModelConfig {
+  bool get supportsImageInputEffective =>
+      capabilities.supportsImageInput ||
+      modelId.toLowerCase().contains('vision');
+}

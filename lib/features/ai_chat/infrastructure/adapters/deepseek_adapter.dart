@@ -15,6 +15,7 @@ class DeepSeekAdapter implements AIService {
   final String modelId;
   final String? customApiUrl;
   final bool enableThinking;
+  final bool supportsImageInput;
 
   /// 默认 DeepSeek API 地址
   static const String defaultApiUrl = 'https://api.deepseek.com/v1';
@@ -24,6 +25,7 @@ class DeepSeekAdapter implements AIService {
     required this.modelId,
     this.customApiUrl,
     this.enableThinking = false,
+    this.supportsImageInput = false,
   }) : _dio = Dio() {
     final baseUrl = _normalizeBaseUrl(customApiUrl ?? defaultApiUrl);
     _dio.options.baseUrl = baseUrl;
@@ -333,7 +335,7 @@ class DeepSeekAdapter implements AIService {
       'provider': 'deepseek',
       'model_id': modelId,
       'supports_streaming': true,
-      'supports_vision': false, // DeepSeek 当前不支持视觉输入
+      'supports_vision': supportsImageInput,
       'supports_tools': !modelId.contains(
         'reasoner',
       ), // reasoner 不支持 Function Calling
@@ -394,13 +396,25 @@ class DeepSeekAdapter implements AIService {
   /// 转换消息格式
   Map<String, dynamic> _convertMessage(ChatMessage message) {
     final textParts = <String>[];
+    final richContent = <Map<String, dynamic>>[];
     final toolCalls = <Map<String, dynamic>>[];
+    var hasImage = false;
 
     for (final item in message.content) {
       if (item is TextContent) {
         textParts.add(item.text);
+        richContent.add({'type': 'text', 'text': item.text});
       } else if (item is ImageContent) {
-        throw Exception('DeepSeek does not support image input');
+        if (!supportsImageInput) {
+          throw Exception('当前模型配置未开启图片输入能力');
+        }
+        hasImage = true;
+        richContent.add({
+          'type': 'image_url',
+          'image_url': {
+            'url': 'data:${item.mimeType ?? 'image/jpeg'};base64,${item.data}',
+          },
+        });
       } else if (item is ToolUseContent) {
         toolCalls.add({
           'id': item.toolUseId,
@@ -419,6 +433,7 @@ class DeepSeekAdapter implements AIService {
     if (message.runtimeContext != null &&
         message.runtimeContext!.trim().isNotEmpty) {
       textParts.add(message.runtimeContext!.trim());
+      richContent.add({'type': 'text', 'text': message.runtimeContext!.trim()});
     }
     final textContent = textParts.join('\n\n');
 
@@ -436,7 +451,7 @@ class DeepSeekAdapter implements AIService {
 
     final msg = <String, dynamic>{
       'role': _convertRole(message.role),
-      'content': textContent,
+      'content': hasImage ? richContent : textContent,
     };
     if (message.role == MessageRole.assistant &&
         message.reasoningContent != null) {

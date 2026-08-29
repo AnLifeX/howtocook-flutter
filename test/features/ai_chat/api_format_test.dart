@@ -10,16 +10,20 @@ void main() {
   AIModelConfig config({
     AIAPIFormat apiFormat = AIAPIFormat.auto,
     String? apiUrl,
+    String modelId = 'deepseek-v4-flash',
+    ModelCapabilities capabilities = const ModelCapabilities(
+      supportsMCP: false,
+    ),
   }) {
     return AIModelConfig(
       id: 'test',
       provider: AIProvider.deepseek,
-      modelId: 'deepseek-v4-flash',
+      modelId: modelId,
       displayName: 'DeepSeek',
       customApiKey: 'test-key',
       customApiUrl: apiUrl,
       apiFormat: apiFormat,
-      capabilities: const ModelCapabilities(supportsMCP: false),
+      capabilities: capabilities,
     );
   }
 
@@ -67,6 +71,12 @@ void main() {
         config(apiUrl: 'https://api.deepseek.com/anthropic'),
       ),
       AIAPIFormat.anthropicMessages,
+    );
+    expect(
+      AIServiceFactory.resolveAPIFormat(
+        config(modelId: 'deepseek-v4-flash-vision-exp'),
+      ),
+      AIAPIFormat.responses,
     );
   });
 
@@ -179,6 +189,66 @@ void main() {
       );
 
       expect(request['reasoning']['effort'], 'high');
+    });
+
+    test('Chat Completions encodes image input when model supports it', () {
+      final adapter = DeepSeekAdapter(
+        apiKey: 'test-key',
+        modelId: 'deepseek-v4-flash-vision-exp',
+        supportsImageInput: true,
+      );
+      final request = adapter.buildRequestForTesting(
+        messages: [
+          ChatMessage(
+            id: 'vision',
+            role: MessageRole.user,
+            content: const [
+              MessageContent.text(text: '这是什么？'),
+              MessageContent.image(data: 'YWJj', mimeType: 'image/jpeg'),
+            ],
+            timestamp: DateTime.fromMillisecondsSinceEpoch(0),
+          ),
+        ],
+      );
+      final content = request['messages'][0]['content'] as List<dynamic>;
+
+      expect(content.first['type'], 'text');
+      expect(content.last['type'], 'image_url');
+      expect(content.last['image_url']['url'], 'data:image/jpeg;base64,YWJj');
+    });
+
+    test('Vision model automatically uses Responses image items', () {
+      final adapter =
+          AIServiceFactory.create(
+                config(
+                  modelId: 'deepseek-v4-flash-vision-exp',
+                  capabilities: const ModelCapabilities(
+                    supportsImageInput: true,
+                  ),
+                ),
+              )
+              as OpenAIAdapter;
+      final request = adapter.buildRequestForTesting(
+        messages: [
+          ChatMessage(
+            id: 'vision-response',
+            role: MessageRole.user,
+            content: const [
+              MessageContent.text(text: '识别图片'),
+              MessageContent.image(data: 'YWJj', mimeType: 'image/png'),
+            ],
+            timestamp: DateTime.fromMillisecondsSinceEpoch(0),
+          ),
+        ],
+      );
+      final input = request['input'] as List<dynamic>;
+      final messageContent = input.single['content'] as List<dynamic>;
+
+      expect(
+        messageContent.where((item) => item['type'] == 'input_image'),
+        hasLength(1),
+      );
+      expect(messageContent.last['image_url'], 'data:image/png;base64,YWJj');
     });
   });
 }

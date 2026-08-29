@@ -58,6 +58,40 @@ void main() {
     expect(recipes.first, isNot(contains('steps')));
   });
 
+  test('本地搜索兼容常见菜名别名', () async {
+    final result = await service.execute(
+      mode: RecipeDataMode.local,
+      toolName: 'searchRecipes',
+      input: const {'query': '西红柿炒蛋'},
+    );
+
+    expect(result['success'], isTrue);
+    expect(result['resultCoverage'], 'complete');
+    expect(
+      (result['recipes'] as List<dynamic>).map((item) => item['id']),
+      contains('bundled-1'),
+    );
+  });
+
+  test('截断搜索结果明确提示不能判断菜谱不存在', () async {
+    repository.recipes.addAll(
+      List.generate(
+        22,
+        (index) =>
+            _recipe('extra-$index', '测试菜$index', RecipeSource.userCreated),
+      ),
+    );
+    final result = await service.execute(
+      mode: RecipeDataMode.local,
+      toolName: 'searchRecipes',
+      input: const {'query': '', 'limit': 2},
+    );
+
+    expect(result['truncated'], isTrue);
+    expect(result['resultCoverage'], 'partial');
+    expect(result['warning'], contains('不能'));
+  });
+
   test('执行层拒绝云端模式调用本地收藏工具', () async {
     final result = await service.execute(
       mode: RecipeDataMode.cloud,

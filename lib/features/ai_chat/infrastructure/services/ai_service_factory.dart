@@ -51,6 +51,7 @@ class AIServiceFactory {
                   : null),
           apiFormat: AIAPIFormat.responses,
           enableThinking: config.capabilities.enableThinking,
+          supportsImageInput: config.supportsImageInputEffective,
         );
 
       case AIAPIFormat.chatCompletions:
@@ -60,6 +61,7 @@ class AIServiceFactory {
             modelId: config.modelId,
             customApiUrl: apiUrl,
             enableThinking: config.capabilities.enableThinking,
+            supportsImageInput: config.supportsImageInputEffective,
           );
         }
         return OpenAIAdapter(
@@ -67,6 +69,7 @@ class AIServiceFactory {
           modelId: config.modelId,
           customApiUrl: apiUrl,
           apiFormat: AIAPIFormat.chatCompletions,
+          supportsImageInput: config.supportsImageInputEffective,
         );
 
       case AIAPIFormat.auto:
@@ -84,6 +87,10 @@ class AIServiceFactory {
       return AIAPIFormat.anthropicMessages;
     }
     if (url.endsWith('/responses') || url.contains('lljby.cn')) {
+      return AIAPIFormat.responses;
+    }
+    if (config.provider == AIProvider.deepseek &&
+        config.modelId.toLowerCase().contains('vision')) {
       return AIAPIFormat.responses;
     }
     if (config.provider == AIProvider.claude) {
