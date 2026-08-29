@@ -754,17 +754,13 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
           tooltip: '会话列表',
           onPressed: () => _scaffoldKey.currentState?.openDrawer(),
         ),
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('小厨', style: TextStyle(color: AppColors.textPrimary)),
-            const SizedBox(width: 8),
-            Flexible(child: _buildModelSelector()),
-          ],
+        titleSpacing: 0,
+        title: Align(
+          alignment: Alignment.centerLeft,
+          child: _buildModelSelector(),
         ),
         centerTitle: false,
         actions: [
-          _buildDataModeSelector(),
           IconButton(
             icon: const Icon(Icons.delete_outline),
             tooltip: '清空聊天记录',
@@ -788,7 +784,6 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
                   ? _buildEmptyState()
                   : _buildMessageList(),
             ),
-            _buildContextStatusBar(),
             _buildInputArea(),
           ],
         ),
@@ -834,10 +829,34 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
             ),
           )
           .toList(),
-      icon: Icon(
-        _contextState.recipeDataMode == RecipeDataMode.local
-            ? Icons.phone_android
-            : Icons.cloud_outlined,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: AppColors.textSecondary.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: AppColors.textSecondary.withValues(alpha: 0.2),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              _contextState.recipeDataMode == RecipeDataMode.local
+                  ? Icons.phone_android
+                  : Icons.cloud_outlined,
+              size: 16,
+              color: AppColors.textSecondary,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              _contextState.recipeDataMode.label,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -863,60 +882,25 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
     final modelsAsync = ref.watch(availableModelsProvider);
 
     return modelsAsync.when(
-      loading: () => _buildModelSelectorContainer(
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: AppColors.primary,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              '加载模型...',
-              style: AppTextStyles.bodySmall.copyWith(color: AppColors.primary),
-            ),
-          ],
+      loading: () => const Padding(
+        padding: EdgeInsets.all(12),
+        child: SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(strokeWidth: 2),
         ),
       ),
-      error: (error, _) => _buildModelSelectorContainer(
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => ref.invalidate(availableModelsProvider),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.warning_amber_rounded,
-                size: 16,
-                color: AppColors.error,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                '加载失败，点击重试',
-                style: AppTextStyles.bodySmall.copyWith(color: AppColors.error),
-              ),
-            ],
-          ),
-        ),
+      error: (error, _) => IconButton(
+        tooltip: '模型加载失败，点击重试',
+        onPressed: () => ref.invalidate(availableModelsProvider),
+        icon: const Icon(Icons.warning_amber_rounded, color: AppColors.error),
       ),
       data: (models) {
         if (models.isEmpty) {
-          return _buildModelSelectorContainer(
-            InkWell(
-              onTap: () => context.push('/model-management'),
-              child: Text(
-                '添加模型',
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.primary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
+          return IconButton(
+            tooltip: '添加模型',
+            onPressed: () => context.push('/model-management'),
+            icon: const Icon(Icons.add_circle_outline),
           );
         }
 
@@ -942,94 +926,68 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
 
         final currentValue = matchingModel?.id ?? models.first.id;
 
-        return _buildModelSelectorContainer(
-          DropdownButton<String>(
-            value: currentValue,
-            underline: const SizedBox(),
-            isDense: true,
-            icon: const Icon(Icons.arrow_drop_down, size: 18),
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.primary,
-              fontWeight: FontWeight.w600,
-            ),
-            isExpanded: true,
-            items: models.map((model) {
-              return DropdownMenuItem(
-                value: model.id,
-                child: Text(model.displayName, overflow: TextOverflow.ellipsis),
-              );
-            }).toList(),
-            onChanged: (modelId) {
-              if (modelId == null) return;
-              final nextModel = models.firstWhere(
-                (model) => model.id == modelId,
-              );
-              ref.read(selectedModelConfigProvider.notifier).state = nextModel;
-            },
-          ),
+        final currentModel = models.firstWhere(
+          (model) => model.id == currentValue,
+        );
+        return PopupMenuButton<String>(
+          tooltip: '切换模型（${currentModel.displayName}）',
+          initialValue: currentValue,
+          icon: const Icon(Icons.model_training_outlined),
+          onSelected: (modelId) {
+            final nextModel = models.firstWhere((model) => model.id == modelId);
+            ref.read(selectedModelConfigProvider.notifier).state = nextModel;
+          },
+          itemBuilder: (context) => models
+              .map(
+                (model) => PopupMenuItem<String>(
+                  value: model.id,
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 28,
+                        child: model.id == currentValue
+                            ? const Icon(Icons.check, size: 18)
+                            : null,
+                      ),
+                      Expanded(
+                        child: Text(
+                          model.displayName,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+              .toList(),
         );
       },
     );
   }
 
-  /// 构建模型选择器容器
-  Widget _buildModelSelectorContainer(Widget child) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppColors.primaryLight.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.primary.withValues(alpha: 0.3),
-          width: 1,
-        ),
-      ),
-      child: child,
-    );
-  }
-
-  Widget _buildContextStatusBar() {
+  Widget _buildContextStatusButton() {
     final model = ref.watch(selectedModelConfigProvider);
-    if (model == null || _messages.isEmpty) return const SizedBox.shrink();
+    if (model == null || _messages.isEmpty) {
+      return const IconButton(
+        tooltip: '暂无上下文数据',
+        onPressed: null,
+        icon: Icon(Icons.data_usage_outlined),
+      );
+    }
     final estimated = _estimatedContextTokens(model);
     final window = model.capabilities.contextWindow;
     final ratio = window <= 0 ? 0.0 : estimated / window;
     final warning = ratio >= _contextWarningRatio;
     final cacheRate = _contextState.cacheHitRate;
 
-    return Material(
-      color: warning
-          ? AppColors.warning.withValues(alpha: 0.10)
-          : AppColors.surface,
-      child: InkWell(
-        onTap: () => _showContextDetails(model),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-          child: Row(
-            children: [
-              Icon(
-                warning ? Icons.warning_amber_rounded : Icons.data_usage,
-                size: 15,
-                color: warning ? AppColors.warning : AppColors.textSecondary,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  '上下文 ${_formatTokenCount(estimated)} / ${_formatTokenCount(window)}'
-                  '${cacheRate == null ? '' : ' · 缓存 ${(cacheRate * 100).round()}%'}'
-                  '${_contextState.hasSummary ? ' · 已压缩' : ''}',
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: warning
-                        ? AppColors.warning
-                        : AppColors.textSecondary,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const Icon(Icons.chevron_right, size: 16),
-            ],
-          ),
-        ),
+    return IconButton(
+      tooltip:
+          '上下文 ${_formatTokenCount(estimated)} / ${_formatTokenCount(window)}'
+          '${cacheRate == null ? '' : ' · 缓存 ${(cacheRate * 100).round()}%'}',
+      onPressed: () => _showContextDetails(model),
+      icon: Icon(
+        warning ? Icons.warning_amber_rounded : Icons.data_usage_outlined,
+        color: warning ? AppColors.warning : AppColors.textSecondary,
       ),
     );
   }
@@ -1148,19 +1106,21 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
   /// 构建深度思考开关
   Widget _buildThinkingToggle() {
     return GestureDetector(
-      onTap: () {
-        setState(() {
-          _enableThinking = !_enableThinking;
-        });
-        _saveSetting('enable_thinking', _enableThinking);
+      onTap: _isLoading
+          ? null
+          : () {
+              setState(() {
+                _enableThinking = !_enableThinking;
+              });
+              _saveSetting('enable_thinking', _enableThinking);
 
-        AppSnackBar.show(
-          context,
-          _enableThinking ? '已开启深度思考' : '已关闭深度思考',
-          duration: const Duration(seconds: 1),
-          bottomOffset: AppSnackBar.kChatBottomOffset,
-        );
-      },
+              AppSnackBar.show(
+                context,
+                _enableThinking ? '已开启深度思考' : '已关闭深度思考',
+                duration: const Duration(seconds: 1),
+                bottomOffset: AppSnackBar.kChatBottomOffset,
+              );
+            },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
@@ -1303,7 +1263,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
 
     return ListView.builder(
       controller: _scrollController,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(12, 16, 12, 16),
       itemCount: _messages.length,
       itemBuilder: (context, index) {
         final message = _messages[index];
@@ -1338,6 +1298,10 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
               ? _streamingReasoningText
               : null,
           aiStatusText: isLastMessage ? _aiStatusText : null,
+          isPending:
+              isLastMessage &&
+              _isLoading &&
+              message.role == MessageRole.assistant,
           recipeRecognizer: _recipeRecognizer,
           createdRecipes: _createdRecipes, // 传递 AI 创建的食谱列表
           onRecipeTap: (recipeId) async {
@@ -1400,14 +1364,16 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
   String _toolStatusText(String toolName) {
     final clean = toolName.replaceFirst('mcp_howtocook_', '');
     return switch (clean) {
-      'getRecipeById' => '搜索菜谱中...',
+      'getRecipeById' => '读取菜谱详情中...',
       'searchRecipes' => '搜索菜谱中...',
       'getAllRecipes' => '获取菜谱列表中...',
       'getRecipesByCategory' => '查询分类中...',
-      'createRecipe' => '创建食谱中...',
-      'recommendMeals' => '获取推荐中...',
+      'createRecipe' => '生成食谱草稿中...',
+      'recommendMeals' => '筛选用餐推荐中...',
+      'whatToEat' => '搭配今日菜单中...',
+      'getFavoriteRecipes' => '读取本地收藏中...',
       'getRecipeDetail' => '获取详情中...',
-      _ => '调用工具中...',
+      _ => '正在执行应用工具...',
     };
   }
 
@@ -1434,7 +1400,24 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
           // 工具栏
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Row(children: [_buildThinkingToggle()]),
+            child: Row(
+              children: [
+                ActionChip(
+                  avatar: const Icon(
+                    Icons.add_photo_alternate_outlined,
+                    size: 16,
+                  ),
+                  label: const Text('图片'),
+                  tooltip: '拍照或从相册选择',
+                  onPressed: _isLoading ? null : _showImageSourcePicker,
+                  visualDensity: VisualDensity.compact,
+                ),
+                const SizedBox(width: 8),
+                _buildThinkingToggle(),
+                const SizedBox(width: 8),
+                _buildDataModeSelector(),
+              ],
+            ),
           ),
 
           // 图片预览
@@ -1487,11 +1470,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
           // 输入框行
           Row(
             children: [
-              IconButton(
-                icon: const Icon(Icons.image),
-                tooltip: '上传图片',
-                onPressed: _pickImage,
-              ),
+              _buildContextStatusButton(),
               Expanded(
                 child: TextField(
                   controller: _inputController,
@@ -1539,11 +1518,41 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
     );
   }
 
-  /// 选择图片
-  Future<void> _pickImage() async {
+  Future<void> _showImageSourcePicker() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.photo_camera_outlined),
+                title: const Text('拍照'),
+                subtitle: const Text('打开相机拍摄一张照片'),
+                onTap: () => Navigator.pop(sheetContext, ImageSource.camera),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined),
+                title: const Text('从相册选择'),
+                subtitle: const Text('选择已有图片'),
+                onTap: () => Navigator.pop(sheetContext, ImageSource.gallery),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (source != null) await _pickImage(source);
+  }
+
+  /// 拍照或从相册选择图片
+  Future<void> _pickImage(ImageSource source) async {
     try {
       final image = await _imagePicker.pickImage(
-        source: ImageSource.gallery,
+        source: source,
         maxWidth: 1024,
         maxHeight: 1024,
         imageQuality: 85,
@@ -1558,7 +1567,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
       if (mounted) {
         AppSnackBar.show(
           context,
-          '选择图片失败: $e',
+          source == ImageSource.camera ? '拍照失败: $e' : '选择图片失败: $e',
           bottomOffset: AppSnackBar.kChatBottomOffset,
         );
       }
@@ -1778,6 +1787,12 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
         while (toolCallCount < maxToolCalls) {
           toolCallCount++;
           debugPrint('Tool call iteration $toolCallCount');
+
+          if (mounted) {
+            setState(() {
+              _aiStatusText = toolCallCount == 1 ? '分析并选择工具中...' : '整理工具结果中...';
+            });
+          }
 
           final streamingTextBuffer = StringBuffer();
 

@@ -83,11 +83,17 @@ class ConversationDrawer extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.chat_bubble_outline, size: 48, color: AppColors.textDisabled),
+          Icon(
+            Icons.chat_bubble_outline,
+            size: 48,
+            color: AppColors.textDisabled,
+          ),
           const SizedBox(height: 12),
           Text(
             '暂无会话记录',
-            style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textDisabled),
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: AppColors.textDisabled,
+            ),
           ),
         ],
       ),
@@ -204,13 +210,20 @@ class _ConversationTile extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
         decoration: BoxDecoration(
-          color: isActive ? AppColors.primaryLight.withValues(alpha: 0.5) : null,
+          color: isActive
+              ? AppColors.primaryLight.withValues(alpha: 0.5)
+              : null,
           borderRadius: BorderRadius.circular(10),
         ),
         child: ListTile(
           dense: true,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 2,
+          ),
           title: Text(
             conversation.title,
             maxLines: 1,
@@ -227,30 +240,44 @@ class _ConversationTile extends StatelessWidget {
               fontSize: 12,
             ),
           ),
-          trailing: onRename != null
-              ? PopupMenuButton<String>(
-                  icon: Icon(Icons.more_horiz, size: 18, color: AppColors.textDisabled),
-                  padding: EdgeInsets.zero,
-                  itemBuilder: (_) => [
-                    const PopupMenuItem(value: 'rename', child: Text('重命名')),
-                    PopupMenuItem(
-                      value: 'delete',
-                      child: Text('删除', style: TextStyle(color: AppColors.error)),
-                    ),
-                  ],
-                  onSelected: (action) {
-                    if (action == 'rename') {
-                      onRename!();
-                    } else if (action == 'delete') {
-                      onDelete();
-                    }
-                  },
-                )
-              : null,
           onTap: onTap,
+          onLongPress: () => _showActions(context),
         ),
       ),
     );
+  }
+
+  Future<void> _showActions(BuildContext context) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (onRename != null)
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text('重命名会话'),
+                onTap: () => Navigator.pop(sheetContext, 'rename'),
+              ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: AppColors.error),
+              title: const Text(
+                '删除会话',
+                style: TextStyle(color: AppColors.error),
+              ),
+              onTap: () => Navigator.pop(sheetContext, 'delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (action == 'rename') {
+      onRename?.call();
+    } else if (action == 'delete') {
+      onDelete();
+    }
   }
 
   String _buildSubtitle() {

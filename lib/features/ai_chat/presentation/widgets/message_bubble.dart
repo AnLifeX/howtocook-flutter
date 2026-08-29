@@ -33,6 +33,7 @@ class MessageBubble extends StatefulWidget {
   final String? streamingText;
   final String? streamingReasoningText; // 流式思考内容
   final String? aiStatusText;
+  final bool isPending;
   final RecipeRecognizer? recipeRecognizer;
   final TipRecognizer? tipRecognizer;
   final Function(String recipeId)? onRecipeTap;
@@ -51,6 +52,7 @@ class MessageBubble extends StatefulWidget {
     this.streamingText,
     this.streamingReasoningText,
     this.aiStatusText,
+    this.isPending = false,
     this.recipeRecognizer,
     this.tipRecognizer,
     this.onRecipeTap,
@@ -98,9 +100,9 @@ class _MessageBubbleState extends State<MessageBubble> {
     final displayText = widget.isStreaming && widget.streamingText != null
         ? widget.streamingText!
         : widget.message.content
-            .whereType<TextContent>()
-            .map((c) => c.text)
-            .join('\n');
+              .whereType<TextContent>()
+              .map((c) => c.text)
+              .join('\n');
 
     final allRecipes = <RecipeCardData>[];
 
@@ -113,14 +115,17 @@ class _MessageBubbleState extends State<MessageBubble> {
           final recipe = widget.createdRecipes![recipeId];
           if (recipe != null) {
             allRecipes.add(RecipeCardData.fromRecipe(recipe));
-            debugPrint('✅ Showing created recipe card: ${recipe.name} (ID: $recipeId)');
+            debugPrint(
+              '✅ Showing created recipe card: ${recipe.name} (ID: $recipeId)',
+            );
           }
         }
       }
 
       // 2. 识别内置菜谱（通过 RecipeRecognizer，依赖文本匹配）
       if (displayText.isNotEmpty && widget.recipeRecognizer != null) {
-        final builtinRecipes = await widget.recipeRecognizer!.extractRecipesFromText(displayText);
+        final builtinRecipes = await widget.recipeRecognizer!
+            .extractRecipesFromText(displayText);
         for (final recipe in builtinRecipes) {
           // 避免重复添加（检查 ID 是否已存在）
           if (!allRecipes.any((r) => r.id == recipe.id)) {
@@ -147,9 +152,9 @@ class _MessageBubbleState extends State<MessageBubble> {
     final displayText = widget.isStreaming && widget.streamingText != null
         ? widget.streamingText!
         : widget.message.content
-            .whereType<TextContent>()
-            .map((c) => c.text)
-            .join('\n');
+              .whereType<TextContent>()
+              .map((c) => c.text)
+              .join('\n');
 
     if (displayText.isEmpty) return;
 
@@ -173,167 +178,117 @@ class _MessageBubbleState extends State<MessageBubble> {
     final displayText = widget.isStreaming && widget.streamingText != null
         ? widget.streamingText!
         : widget.message.content
-            .whereType<TextContent>()
-            .map((c) => c.text)
-            .join('\n');
+              .whereType<TextContent>()
+              .map((c) => c.text)
+              .join('\n');
 
     // 提取文本内容用于复制
     final textContent = displayText;
+    final hasVisibleMessage = widget.isStreaming
+        ? (widget.streamingText?.trim().isNotEmpty ?? false)
+        : widget.message.content.any(
+            (content) =>
+                content is! TextContent || content.text.trim().isNotEmpty,
+          );
+    final statusText =
+        widget.aiStatusText ??
+        (widget.isPending && !hasVisibleMessage ? '正在处理...' : null);
 
-    return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.75,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // AI头像（左侧）
-            if (!isUser) ...[
-              _buildAvatar(isUser),
-              const SizedBox(width: 8),
-            ],
-
-            // 消息内容
-            Flexible(
-              child: Column(
-                crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                children: [
-                  // AI 状态标签（头像右侧内联显示）
-                  if (!isUser && widget.aiStatusText != null)
-                    _buildAiStatusLabel(widget.aiStatusText!),
-
-                  // 思考过程展示（仅AI消息，显示在消息之前）
-                  if (!isUser) _buildReasoningBlock(),
-
-                  // 消息气泡
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: isUser ? AppColors.primary : AppColors.surfaceAlt,
-                      borderRadius: BorderRadius.circular(16).copyWith(
-                        topRight: isUser ? const Radius.circular(4) : null,
-                        topLeft: isUser ? null : const Radius.circular(4),
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.textPrimary.withValues(alpha: 0.05),
-                          offset: const Offset(0, 2),
-                          blurRadius: 4,
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // 如果是流式显示，直接显示文本
-                        if (widget.isStreaming && widget.streamingText != null)
-                          _buildTextContent(widget.streamingText!, isUser)
-                        else
-                          // 否则渲染所有内容
-                          ...widget.message.content.map((content) => content.when(
-                            text: (text) => _buildTextContent(text, isUser),
-                            image: (data, mimeType, localPath) => _buildImageContent(localPath ?? data, isUser),
-                            toolUse: (toolUseId, name, input) => _buildToolUseContent(name, isUser),
-                            toolResult: (toolUseId, result) => _buildToolResultContent(result, isUser),
-                          )),
-                      ],
-                    ),
-                  ),
-
-                  // 菜谱卡片（仅AI消息）
-                  if (!isUser && _recognizedRecipes != null && _recognizedRecipes!.isNotEmpty)
-                    ..._recognizedRecipes!.map((recipe) => RecipeCardWidget(
-                      recipe: recipe,
-                      onTap: widget.onRecipeTap != null
-                          ? () => widget.onRecipeTap!(recipe.id)
-                          : null,
-                    )),
-
-                  // 教程卡片（仅AI消息）
-                  if (!isUser && _recognizedTips != null && _recognizedTips!.isNotEmpty)
-                    ..._recognizedTips!.map((tip) => TipCardWidget(
-                      tip: tip,
-                      onTap: widget.onTipTap != null
-                          ? () => widget.onTipTap!(tip.id, tip.category)
-                          : null,
-                    )),
-
-                  // 时间戳和模型名称
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 20),
+      child: Column(
+        crossAxisAlignment: isUser
+            ? CrossAxisAlignment.end
+            : CrossAxisAlignment.start,
+        children: [
+          if (!isUser && statusText != null) _buildAiStatusLabel(statusText),
+          if (!isUser) _buildReasoningBlock(),
+          if (hasVisibleMessage)
+            Align(
+              alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: isUser
+                      ? MediaQuery.of(context).size.width * 0.88
+                      : double.infinity,
+                ),
+                child: Container(
+                  padding: isUser
+                      ? const EdgeInsets.symmetric(horizontal: 14, vertical: 10)
+                      : EdgeInsets.zero,
+                  decoration: isUser
+                      ? BoxDecoration(
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.circular(
+                            18,
+                          ).copyWith(topRight: const Radius.circular(5)),
+                        )
+                      : null,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        _formatTime(widget.message.timestamp),
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                      if (!isUser && widget.modelName != null) ...[
-                        const SizedBox(width: 4),
-                        Text(
-                          '· ${widget.modelName}',
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.textSecondary,
-                            fontStyle: FontStyle.italic,
+                      if (widget.isStreaming && widget.streamingText != null)
+                        _buildTextContent(widget.streamingText!, isUser)
+                      else
+                        ...widget.message.content.map(
+                          (content) => content.when(
+                            text: (text) => _buildTextContent(text, isUser),
+                            image: (data, mimeType, localPath) =>
+                                _buildImageContent(localPath ?? data, isUser),
+                            toolUse: (toolUseId, name, input) =>
+                                _buildToolUseContent(name, isUser),
+                            toolResult: (toolUseId, result) =>
+                                _buildToolResultContent(result, isUser),
                           ),
                         ),
-                      ],
                     ],
                   ),
-
-                  // 操作按钮栏（底部持久显示）
-                  if (!widget.isStreaming)
-                    _buildActionBar(context, textContent, isUser),
-                ],
+                ),
               ),
             ),
-
-            // 用户头像（右侧）
-            if (isUser) ...[
-              const SizedBox(width: 8),
-              _buildAvatar(isUser),
-            ],
+          if (!isUser &&
+              _recognizedRecipes != null &&
+              _recognizedRecipes!.isNotEmpty)
+            ..._recognizedRecipes!.map(
+              (recipe) => RecipeCardWidget(
+                recipe: recipe,
+                onTap: widget.onRecipeTap != null
+                    ? () => widget.onRecipeTap!(recipe.id)
+                    : null,
+              ),
+            ),
+          if (!isUser && _recognizedTips != null && _recognizedTips!.isNotEmpty)
+            ..._recognizedTips!.map(
+              (tip) => TipCardWidget(
+                tip: tip,
+                onTap: widget.onTipTap != null
+                    ? () => widget.onTipTap!(tip.id, tip.category)
+                    : null,
+              ),
+            ),
+          if (!widget.isPending) ...[
+            const SizedBox(height: 4),
+            Text(
+              _formatTime(widget.message.timestamp),
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
           ],
-        ),
+          if (!widget.isStreaming && !widget.isPending)
+            _buildActionBar(context, textContent, isUser),
+        ],
       ),
-    );
-  }
-
-  /// 构建头像
-  Widget _buildAvatar(bool isUser) {
-    if (isUser) {
-      return Container(
-        width: 36,
-        height: 36,
-        decoration: const BoxDecoration(
-          color: AppColors.primary,
-          shape: BoxShape.circle,
-        ),
-        child: const Icon(Icons.person, color: AppColors.surface, size: 20),
-      );
-    }
-    return Container(
-      width: 36,
-      height: 36,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppColors.primary, AppColors.plum],
-        ),
-      ),
-      child: const Icon(Icons.auto_awesome, color: AppColors.surface, size: 18),
     );
   }
 
   /// 构建操作按钮栏
-  Widget _buildActionBar(BuildContext context, String textContent, bool isUser) {
+  Widget _buildActionBar(
+    BuildContext context,
+    String textContent,
+    bool isUser,
+  ) {
     return Padding(
       padding: const EdgeInsets.only(top: 4),
       child: Row(
@@ -402,10 +357,7 @@ class _MessageBubbleState extends State<MessageBubble> {
       tooltip: tooltip,
       iconSize: 18,
       padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(
-        minWidth: 32,
-        minHeight: 32,
-      ),
+      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
       onPressed: onTap,
     );
   }
@@ -455,7 +407,9 @@ class _MessageBubbleState extends State<MessageBubble> {
           color: isUser ? AppColors.surface : AppColors.textPrimary,
         ),
         blockquote: TextStyle(
-          color: isUser ? AppColors.surface.withValues(alpha: 0.7) : AppColors.textSecondary,
+          color: isUser
+              ? AppColors.surface.withValues(alpha: 0.7)
+              : AppColors.textSecondary,
           fontStyle: FontStyle.italic,
         ),
         strong: TextStyle(
@@ -515,13 +469,17 @@ class _MessageBubbleState extends State<MessageBubble> {
           Icon(
             Icons.settings,
             size: 16,
-            color: isUser ? AppColors.surface.withValues(alpha: 0.7) : AppColors.textSecondary,
+            color: isUser
+                ? AppColors.surface.withValues(alpha: 0.7)
+                : AppColors.textSecondary,
           ),
           const SizedBox(width: 4),
           Text(
             '调用工具: $toolName',
             style: TextStyle(
-              color: isUser ? AppColors.surface.withValues(alpha: 0.7) : AppColors.textSecondary,
+              color: isUser
+                  ? AppColors.surface.withValues(alpha: 0.7)
+                  : AppColors.textSecondary,
               fontSize: 12,
             ),
           ),
@@ -544,7 +502,9 @@ class _MessageBubbleState extends State<MessageBubble> {
       child: Text(
         '工具结果: ${result.toString()}',
         style: TextStyle(
-          color: isUser ? AppColors.surface.withValues(alpha: 0.7) : AppColors.textSecondary,
+          color: isUser
+              ? AppColors.surface.withValues(alpha: 0.7)
+              : AppColors.textSecondary,
           fontSize: 12,
         ),
       ),
@@ -578,7 +538,9 @@ class _MessageBubbleState extends State<MessageBubble> {
             decoration: BoxDecoration(
               color: AppColors.warning.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppColors.warning.withValues(alpha: 0.3)),
+              border: Border.all(
+                color: AppColors.warning.withValues(alpha: 0.3),
+              ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -598,7 +560,9 @@ class _MessageBubbleState extends State<MessageBubble> {
                     ),
                     const Spacer(),
                     Icon(
-                      _isReasoningExpanded ? Icons.expand_less : Icons.expand_more,
+                      _isReasoningExpanded
+                          ? Icons.expand_less
+                          : Icons.expand_more,
                       size: 20,
                       color: AppColors.warning,
                     ),
@@ -641,35 +605,71 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   Widget _buildAiStatusLabel(String statusText) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(12),
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 220),
+      transitionBuilder: (child, animation) => FadeTransition(
+        opacity: animation,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 0.15),
+            end: Offset.zero,
+          ).animate(animation),
+          child: child,
+        ),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: 12,
-            height: 12,
-            child: CircularProgressIndicator(
-              strokeWidth: 1.5,
-              valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+      child: Container(
+        key: ValueKey(statusText),
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: AppColors.primary.withValues(alpha: 0.09),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(_statusIcon(statusText), size: 15, color: AppColors.primary),
+            const SizedBox(width: 6),
+            SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(
+                strokeWidth: 1.5,
+                valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+              ),
             ),
-          ),
-          const SizedBox(width: 6),
-          Text(
-            statusText,
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.primary,
-              fontWeight: FontWeight.w500,
+            const SizedBox(width: 7),
+            Flexible(
+              child: Text(
+                statusText,
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
+  }
+
+  IconData _statusIcon(String statusText) {
+    if (statusText.contains('搜索') || statusText.contains('查询')) {
+      return Icons.search;
+    }
+    if (statusText.contains('食谱') || statusText.contains('草稿')) {
+      return Icons.menu_book_outlined;
+    }
+    if (statusText.contains('收藏')) return Icons.favorite_outline;
+    if (statusText.contains('推荐') || statusText.contains('菜单')) {
+      return Icons.restaurant_menu;
+    }
+    if (statusText.contains('思考') || statusText.contains('分析')) {
+      return Icons.psychology_outlined;
+    }
+    if (statusText.contains('压缩')) return Icons.compress;
+    return Icons.auto_awesome;
   }
 
   /// 格式化时间（HH:mm）
