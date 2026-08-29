@@ -206,4 +206,47 @@ void main() {
     expect(plan.removedStaleCaches, 0);
     expect(await cachedFile.readAsString(), 'old-cache');
   });
+
+  test('只把 AI 生成封面作为详情页首图', () async {
+    final root = await Directory.systemTemp.createTemp('cover-resolve-');
+    addTearDown(() => root.delete(recursive: true));
+    final service = CoverManifestService(
+      assetBundle: _ManifestAssetBundle(
+        _manifest([
+          _entry(
+            id: 'ai-id',
+            name: 'AI菜',
+            hash: _hash('ai'),
+            aiGenerated: true,
+          ),
+          _entry(
+            id: 'detail-id',
+            name: '普通菜',
+            hash: _hash('detail'),
+            aiGenerated: false,
+          ),
+        ]),
+      ),
+      documentsDirectory: () async => root,
+    );
+
+    expect(
+      await service.resolveAiCoverPath(
+        recipeId: 'ai-id',
+        legacyIds: const [],
+        recipeName: 'AI菜',
+        category: 'test',
+      ),
+      'assets/covers/test/AI菜.webp',
+    );
+    expect(
+      await service.resolveAiCoverPath(
+        recipeId: 'detail-id',
+        legacyIds: const [],
+        recipeName: '普通菜',
+        category: 'test',
+      ),
+      isNull,
+    );
+  });
 }

@@ -13,6 +13,9 @@ import '../../application/providers/recipe_providers.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_snack_bar.dart';
+import '../../../../core/widgets/cached_recipe_image.dart';
+import '../../../../core/services/cover_manifest_service.dart';
+import '../../../../core/services/recipe_image_policy.dart';
 
 /// 菜谱编辑页面
 ///
@@ -50,6 +53,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen> {
   List<String> _tools = [];
   String? _tips;
   List<String> _warnings = [];
+  String? _coverImage;
   List<String> _images = [];
 
   // 保存原始数据副本，用于重置
@@ -65,7 +69,9 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen> {
   List<String> _originalTools = [];
   String? _originalTips;
   List<String> _originalWarnings = [];
+  String? _originalCoverImage;
   List<String> _originalImages = [];
+  Future<String?>? _aiCoverFuture;
 
   @override
   void initState() {
@@ -112,7 +118,15 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen> {
           }.toList();
           _tips = recipe.tips;
           _warnings = List.from(recipe.warnings);
-          _images = List.from(recipe.images);
+          final imageParts = splitRecipeImages(recipe);
+          _coverImage = imageParts.customCover;
+          _images = List.from(imageParts.details);
+          _aiCoverFuture = CoverManifestService().resolveAiCoverPath(
+            recipeId: recipe.id,
+            legacyIds: recipe.legacyIds,
+            recipeName: recipe.name,
+            category: recipe.category,
+          );
 
           // 保存原始数据副本，用于重置
           _originalName = recipe.name;
@@ -131,7 +145,8 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen> {
           _originalTools = List.from(recipe.tools);
           _originalTips = recipe.tips;
           _originalWarnings = List.from(recipe.warnings);
-          _originalImages = List.from(recipe.images);
+          _originalCoverImage = _coverImage;
+          _originalImages = List.from(_images);
 
           _isLoading = false;
         });
@@ -552,10 +567,10 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen> {
           height: height,
           fit: fit,
           errorBuilder: (_, __, ___) =>
-              const Icon(Icons.broken_image, size: 48),
+              const RecipePlaceholderImage.loadFailed(compact: true),
         );
       } catch (_) {
-        return const Icon(Icons.broken_image, size: 48);
+        return const RecipePlaceholderImage.loadFailed(compact: true);
       }
     } else if (isLocalFile && !kIsWeb && File(imagePath).existsSync()) {
       return Image.file(
@@ -563,7 +578,8 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen> {
         width: width,
         height: height,
         fit: fit,
-        errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 48),
+        errorBuilder: (_, __, ___) =>
+            const RecipePlaceholderImage.loadFailed(compact: true),
       );
     } else if (isUrl) {
       return Image.network(
@@ -571,104 +587,129 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen> {
         width: width,
         height: height,
         fit: fit,
-        errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 48),
+        errorBuilder: (_, __, ___) =>
+            const RecipePlaceholderImage.loadFailed(compact: true),
+      );
+    } else if (isAsset) {
+      return Image.asset(
+        imagePath,
+        width: width,
+        height: height,
+        fit: fit,
+        errorBuilder: (_, __, ___) =>
+            const RecipePlaceholderImage.loadFailed(compact: true),
       );
     }
-    return Icon(
-      Icons.image,
-      size: height != null ? height * 0.4 : 48,
-      color: AppColors.textDisabled,
-    );
+    return const RecipePlaceholderImage.loadFailed(compact: true);
   }
 
   /// 封面图片部分
   Widget _buildCoverImageSection() {
-    final hasCover = _images.isNotEmpty;
-    final coverImage = hasCover ? _images[0] : null;
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('封面图片', style: AppTextStyles.h3),
-            const SizedBox(height: 12),
-            if (hasCover && coverImage != null)
-              Stack(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: SizedBox(
-                      width: double.infinity,
-                      height: 200,
-                      child: _buildImagePreview(coverImage, height: 200),
-                    ),
-                  ),
-                  Positioned(
-                    right: 8,
-                    bottom: 8,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _imageActionButton(
-                          icon: Icons.photo_library,
-                          tooltip: '从相册替换',
-                          onPressed: () => _pickLocalImage(isCover: true),
-                        ),
-                        const SizedBox(width: 8),
-                        _imageActionButton(
-                          icon: Icons.link,
-                          tooltip: '用URL替换',
-                          onPressed: () => _addImageUrl(isCover: true),
-                        ),
-                        const SizedBox(width: 8),
-                        _imageActionButton(
-                          icon: Icons.delete,
-                          tooltip: '移除封面',
-                          onPressed: () => setState(() => _images.removeAt(0)),
-                          color: AppColors.error,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              )
-            else
-              InkWell(
-                onTap: () => _showCoverImageSourceDialog(),
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  width: double.infinity,
-                  height: 160,
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceAlt,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: AppColors.textDisabled.withValues(alpha: 0.3),
-                      width: 1,
-                    ),
-                  ),
-                  child: const Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.add_photo_alternate,
-                        size: 48,
-                        color: AppColors.textDisabled,
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        '点击添加封面图片',
-                        style: TextStyle(color: AppColors.textDisabled),
+    return FutureBuilder<String?>(
+      future: _aiCoverFuture,
+      builder: (context, snapshot) {
+        final aiCover = snapshot.data;
+        final coverImage = _coverImage ?? aiCover;
+        final isAiCover = _coverImage == null && aiCover != null;
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text('封面图片', style: AppTextStyles.h3),
+                    if (isAiCover) ...[
+                      const SizedBox(width: 8),
+                      const Chip(
+                        avatar: Icon(Icons.auto_awesome, size: 16),
+                        label: Text('AI 封面'),
+                        visualDensity: VisualDensity.compact,
                       ),
                     ],
-                  ),
+                  ],
                 ),
-              ),
-          ],
-        ),
-      ),
+                const SizedBox(height: 12),
+                if (coverImage != null)
+                  Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: SizedBox(
+                          width: double.infinity,
+                          height: 200,
+                          child: _buildImagePreview(coverImage, height: 200),
+                        ),
+                      ),
+                      Positioned(
+                        right: 8,
+                        bottom: 8,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _imageActionButton(
+                              icon: Icons.photo_library,
+                              tooltip: '从相册替换',
+                              onPressed: () => _pickLocalImage(isCover: true),
+                            ),
+                            const SizedBox(width: 8),
+                            _imageActionButton(
+                              icon: Icons.link,
+                              tooltip: '用URL替换',
+                              onPressed: () => _addImageUrl(isCover: true),
+                            ),
+                            const SizedBox(width: 8),
+                            if (!isAiCover)
+                              _imageActionButton(
+                                icon: Icons.delete,
+                                tooltip: '移除封面',
+                                onPressed: () =>
+                                    setState(() => _coverImage = null),
+                                color: AppColors.error,
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  )
+                else
+                  InkWell(
+                    onTap: () => _showCoverImageSourceDialog(),
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      width: double.infinity,
+                      height: 160,
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceAlt,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppColors.textDisabled.withValues(alpha: 0.3),
+                          width: 1,
+                        ),
+                      ),
+                      child: const Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.add_photo_alternate,
+                            size: 48,
+                            color: AppColors.textDisabled,
+                          ),
+                          SizedBox(height: 8),
+                          Text(
+                            '点击添加封面图片',
+                            style: TextStyle(color: AppColors.textDisabled),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -724,7 +765,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen> {
 
   /// 详情图片部分
   Widget _buildDetailImagesSection() {
-    final detailImages = _images.length > 1 ? _images.sublist(1) : <String>[];
+    final detailImages = _images;
 
     return Card(
       child: Padding(
@@ -770,7 +811,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen> {
             else
               ...detailImages.asMap().entries.map((entry) {
                 final displayIndex = entry.key;
-                final realIndex = displayIndex + 1;
+                final realIndex = displayIndex;
                 final imagePath = entry.value;
                 final isUrl = imagePath.startsWith('http');
                 final isBase64 = imagePath.startsWith('data:image/');
@@ -796,11 +837,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen> {
                     child: SizedBox(
                       width: 40,
                       height: 40,
-                      child: _buildImagePreview(
-                        imagePath,
-                        width: 40,
-                        height: 40,
-                      ),
+                      child: _buildDetailImagePreview(imagePath, realIndex),
                     ),
                   ),
                   title: Text(
@@ -831,6 +868,21 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildDetailImagePreview(String imagePath, int index) {
+    final recipe = _originalRecipe;
+    if (recipe != null && isManagedRecipeDetailPath(imagePath)) {
+      return CachedRecipeImage.detail(
+        category: recipe.category,
+        recipeId: cachedDetailRecipeId(recipe),
+        imageIndex: index,
+        width: 40,
+        height: 40,
+        errorWidget: const RecipePlaceholderImage.notDownloaded(compact: true),
+      );
+    }
+    return _buildImagePreview(imagePath, width: 40, height: 40);
   }
 
   /// 通用列表部分构建
@@ -1017,7 +1069,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen> {
   /// 图片URL编辑对话框
   void _editImageUrlDialog(int index, {bool isCover = false}) {
     final controller = TextEditingController(
-      text: index >= 0 ? _images[index] : '',
+      text: index >= 0 ? _images[index] : (isCover ? _coverImage ?? '' : ''),
     );
 
     final isEditing = index >= 0;
@@ -1047,11 +1099,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen> {
                   if (isEditing) {
                     _images[index] = url;
                   } else if (isCover) {
-                    if (_images.isNotEmpty) {
-                      _images[0] = url;
-                    } else {
-                      _images.insert(0, url);
-                    }
+                    _coverImage = url;
                   } else {
                     _images.add(url);
                   }
@@ -1138,11 +1186,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen> {
       if (mounted) {
         setState(() {
           if (isCover) {
-            if (_images.isNotEmpty) {
-              _images[0] = imagePath;
-            } else {
-              _images.insert(0, imagePath);
-            }
+            _coverImage = imagePath;
           } else {
             _images.add(imagePath);
           }
@@ -1304,7 +1348,12 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen> {
         tools: _tools,
         tips: _tips?.trim().isEmpty == true ? null : _tips?.trim(),
         warnings: _warnings,
-        images: _images,
+        images: [if (_coverImage != null) _coverImage!, ..._images],
+        source: switch (_originalRecipe!.source) {
+          RecipeSource.bundled ||
+          RecipeSource.cloud => RecipeSource.userModified,
+          final source => source,
+        },
       );
 
       final repository = ref.read(recipeRepositoryProvider);
@@ -1349,6 +1398,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen> {
       _tools = List.from(_originalTools);
       _tips = _originalTips;
       _warnings = List.from(_originalWarnings);
+      _coverImage = _originalCoverImage;
       _images = List.from(_originalImages);
     });
 

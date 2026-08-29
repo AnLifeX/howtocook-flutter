@@ -7,9 +7,9 @@ import 'package:howtocook/core/services/image_cache_service.dart';
 /// 优先从本地缓存加载，缓存不存在则从 assets 加载，都不存在则显示占位图
 class CachedRecipeImage extends ConsumerWidget {
   final String category;
-  final String? recipeName;    // 封面图使用
-  final String? recipeId;      // 详情图使用
-  final int? imageIndex;       // 详情图索引
+  final String? recipeName; // 封面图使用
+  final String? recipeId; // 详情图使用
+  final int? imageIndex; // 详情图索引
   final double? width;
   final double? height;
   final BoxFit fit;
@@ -29,9 +29,9 @@ class CachedRecipeImage extends ConsumerWidget {
     this.borderRadius,
     this.placeholder,
     this.errorWidget,
-  })  : recipeId = null,
-        imageIndex = null,
-        _fallbackRecipeId = null;
+  }) : recipeId = null,
+       imageIndex = null,
+       _fallbackRecipeId = null;
 
   const CachedRecipeImage.detail({
     super.key,
@@ -59,9 +59,9 @@ class CachedRecipeImage extends ConsumerWidget {
     this.borderRadius,
     this.placeholder,
     this.errorWidget,
-  })  : recipeId = null,
-        imageIndex = null,
-        _fallbackRecipeId = fallbackRecipeId;
+  }) : recipeId = null,
+       imageIndex = null,
+       _fallbackRecipeId = fallbackRecipeId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -116,7 +116,11 @@ class CachedRecipeImage extends ConsumerWidget {
     return null;
   }
 
-  Widget _buildFileImage(BuildContext context, String filePath, ImageCacheService service) {
+  Widget _buildFileImage(
+    BuildContext context,
+    String filePath,
+    ImageCacheService service,
+  ) {
     Widget image = Image.file(
       File(filePath),
       width: width,
@@ -149,7 +153,11 @@ class CachedRecipeImage extends ConsumerWidget {
     return image;
   }
 
-  Widget _buildAssetImage(BuildContext context, String assetPath, ImageCacheService service) {
+  Widget _buildAssetImage(
+    BuildContext context,
+    String assetPath,
+    ImageCacheService service,
+  ) {
     Widget image = Image.asset(
       assetPath,
       width: width,
@@ -179,30 +187,15 @@ class CachedRecipeImage extends ConsumerWidget {
   }
 
   Widget _buildDefaultPlaceholder(BuildContext context) {
-    return Container(
+    return RecipePlaceholderImage.notDownloaded(
       width: width,
       height: height,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Theme.of(context).colorScheme.primaryContainer,
-            Theme.of(context).colorScheme.secondaryContainer,
-          ],
-        ),
-        borderRadius: borderRadius,
-      ),
-      child: Center(
-        child: Icon(
-          Icons.restaurant_menu,
-          size: 48,
-          color: Theme.of(context).colorScheme.onPrimaryContainer.withValues(alpha: 0.5),
-        ),
-      ),
+      borderRadius: borderRadius,
     );
   }
 }
+
+enum RecipeImagePlaceholderType { noImage, notDownloaded, loadFailed }
 
 /// 占位图Widget - 用于显示默认占位图
 class RecipePlaceholderImage extends StatelessWidget {
@@ -211,6 +204,9 @@ class RecipePlaceholderImage extends StatelessWidget {
   final BorderRadius? borderRadius;
   final IconData icon;
   final String? text;
+  final String? subtitle;
+  final bool compact;
+  final RecipeImagePlaceholderType type;
 
   const RecipePlaceholderImage({
     super.key,
@@ -219,7 +215,43 @@ class RecipePlaceholderImage extends StatelessWidget {
     this.borderRadius,
     this.icon = Icons.restaurant_menu,
     this.text,
+    this.subtitle,
+    this.compact = false,
+    this.type = RecipeImagePlaceholderType.noImage,
   });
+
+  const RecipePlaceholderImage.noImage({
+    super.key,
+    this.width,
+    this.height,
+    this.borderRadius,
+    this.compact = false,
+  }) : icon = Icons.add_photo_alternate_outlined,
+       text = '暂无图片',
+       subtitle = '点击编辑上传一张',
+       type = RecipeImagePlaceholderType.noImage;
+
+  const RecipePlaceholderImage.notDownloaded({
+    super.key,
+    this.width,
+    this.height,
+    this.borderRadius,
+    this.compact = false,
+  }) : icon = Icons.cloud_download_outlined,
+       text = '图片未下载',
+       subtitle = '可前往数据同步页面下载',
+       type = RecipeImagePlaceholderType.notDownloaded;
+
+  const RecipePlaceholderImage.loadFailed({
+    super.key,
+    this.width,
+    this.height,
+    this.borderRadius,
+    this.compact = false,
+  }) : icon = Icons.broken_image_outlined,
+       text = '图片加载失败',
+       subtitle = '请检查图片文件或网络连接',
+       type = RecipeImagePlaceholderType.loadFailed;
 
   @override
   Widget build(BuildContext context) {
@@ -242,17 +274,36 @@ class RecipePlaceholderImage extends StatelessWidget {
         children: [
           Icon(
             icon,
-            size: 64,
-            color: Theme.of(context).colorScheme.onPrimaryContainer.withValues(alpha: 0.6),
+            size: compact ? 40 : 64,
+            color: Theme.of(
+              context,
+            ).colorScheme.onPrimaryContainer.withValues(alpha: 0.6),
           ),
-          if (text != null) ...[
+          if (!compact && text != null) ...[
             const SizedBox(height: 8),
             Text(
               text!,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onPrimaryContainer.withValues(alpha: 0.6),
-                  ),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onPrimaryContainer.withValues(alpha: 0.6),
+              ),
             ),
+            if (subtitle != null) ...[
+              const SizedBox(height: 4),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  subtitle!,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onPrimaryContainer.withValues(alpha: 0.5),
+                  ),
+                ),
+              ),
+            ],
           ],
         ],
       ),

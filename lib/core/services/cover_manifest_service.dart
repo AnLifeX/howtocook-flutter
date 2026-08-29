@@ -200,6 +200,47 @@ class CoverManifestService {
     }
   }
 
+  /// 返回当前菜谱可展示的 AI 封面（本地更新缓存优先，其次 APK 内置资源）。
+  ///
+  /// 下载索引里只记录 AI 封面，因此即使远端新增的封面尚未包含在当前 APK 的
+  /// manifest 中，也能通过索引恢复。旧版索引按 ID 找不到时再用分类和菜名兼容。
+  Future<String?> resolveAiCoverPath({
+    required String recipeId,
+    required List<String> legacyIds,
+    required String recipeName,
+    required String category,
+  }) async {
+    final coverRoot = await _coverCacheRoot();
+    final downloaded = await _readDownloadedIndex(coverRoot);
+    Map<String, dynamic>? downloadedEntry = downloaded[recipeId];
+    downloadedEntry ??= downloaded.values
+        .cast<Map<String, dynamic>?>()
+        .firstWhere(
+          (entry) =>
+              entry?['category'] == category &&
+              entry?['recipeName'] == recipeName,
+          orElse: () => null,
+        );
+    if (downloadedEntry != null) {
+      final file = File(p.join(coverRoot.path, category, '$recipeName.webp'));
+      await _recoverPreviousCover(file);
+      if (await file.exists()) return file.path;
+    }
+
+    final bundled = await loadBundledManifest();
+    if (bundled == null) return null;
+    final acceptedIds = <String>{recipeId, ...legacyIds};
+    final entry = bundled.covers.cast<CoverManifestEntry?>().firstWhere(
+      (item) =>
+          item != null &&
+          item.aiGenerated &&
+          ((acceptedIds.contains(item.recipeId)) ||
+              (item.category == category && item.recipeName == recipeName)),
+      orElse: () => null,
+    );
+    return entry == null ? null : 'assets/${entry.path}';
+  }
+
   Future<int> reconcileBundledAiCoverCache() async {
     final bundled = await loadBundledManifest();
     if (bundled == null) return 0;

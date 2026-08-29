@@ -17,6 +17,8 @@ import '../../../../core/widgets/app_snack_bar.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/widgets/cached_recipe_image.dart';
+import '../../../../core/services/cover_manifest_service.dart';
+import '../../../../core/services/recipe_image_policy.dart';
 import '../widgets/share_bottom_sheet.dart';
 import '../../../ai_chat/infrastructure/repositories/conversation_repository.dart';
 
@@ -43,8 +45,10 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
   Timer? _resumeTimer;
   int _currentPage = 0;
   int _totalImages = 0;
+  int? _pendingCarouselCount;
   bool _isProgrammaticScroll = false;
   bool _isAutoScrollPaused = false;
+  final Map<String, Future<String?>> _aiCoverFutures = {};
 
   @override
   void dispose() {
@@ -58,6 +62,9 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
   void _initImageCarousel(int imageCount) {
     if (imageCount <= 1) return;
 
+    _pageController?.dispose();
+    _progressController?.dispose();
+    _currentPage = 0;
     _totalImages = imageCount;
     _pageController = PageController(initialPage: 0);
 
@@ -71,6 +78,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
       }
     });
     _progressController!.forward();
+    _pendingCarouselCount = null;
   }
 
   void _advanceToNextPage() {
@@ -104,24 +112,6 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
         });
       }
     });
-  }
-
-  /// 判断 [path] 是否为可直接加载的图片来源（用户上传 / 网络 / 资源）。
-  ///
-  /// 内置菜谱的 images 条目通常是相对名或索引串，不符合此判断，
-  /// 将走 [CachedRecipeImage.detail] 的 assets/缓存回落逻辑。
-  bool _isDirectImagePath(String path) {
-    if (path.isEmpty) return false;
-    if (path.startsWith('data:image/')) return true;
-    if (path.startsWith('http://') || path.startsWith('https://')) return true;
-    // assets/images/ 是详情图的占位路径，实际未内置，需走下载缓存逻辑
-    if (path.startsWith('assets/') && !path.startsWith('assets/images/')) {
-      return true;
-    }
-    if (path.startsWith('/')) return true; // Unix 绝对路径
-    // Windows 绝对路径：C:\ 或 C:/
-    if (RegExp(r'^[A-Za-z]:[\\/]').hasMatch(path)) return true;
-    return false;
   }
 
   @override
@@ -299,220 +289,226 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
   /// 构建沉浸式应用栏
   Widget _buildSliverAppBar(BuildContext context, Recipe recipe) {
     final isFavoriteAsync = ref.watch(isFavoriteProvider(recipe.id));
-
-    return SliverAppBar(
-      expandedHeight: 380,
-      pinned: true,
-      backgroundColor: AppColors.primary,
-      leading: Padding(
-        padding: const EdgeInsets.all(8),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: AppColors.textPrimary.withValues(alpha: 0.2),
-            shape: BoxShape.circle,
-          ),
-          child: IconButton(
-            icon: const Icon(Icons.arrow_back, color: AppColors.surface),
-            onPressed: () => context.pop(),
-          ),
-        ),
+    final coverFuture = _aiCoverFutures.putIfAbsent(
+      recipe.id,
+      () => CoverManifestService().resolveAiCoverPath(
+        recipeId: recipe.id,
+        legacyIds: recipe.legacyIds,
+        recipeName: recipe.name,
+        category: recipe.category,
       ),
-      actions: [
-        // 收藏爱心
-        Padding(
-          padding: const EdgeInsets.all(8),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: AppColors.textPrimary.withValues(alpha: 0.2),
-              shape: BoxShape.circle,
-            ),
-            child: isFavoriteAsync.when(
-              data: (isFavorite) => IconButton(
-                icon: Icon(
-                  isFavorite ? Icons.favorite : Icons.favorite_border,
-                  color: isFavorite
-                      ? const Color(0xFFFF6B6B)
-                      : AppColors.surface,
-                ),
-                onPressed: () => _toggleFavorite(recipe.id),
+    );
+
+    return FutureBuilder<String?>(
+      future: coverFuture,
+      builder: (context, coverSnapshot) {
+        final gallery = _galleryImages(recipe, coverSnapshot.data);
+        return SliverAppBar(
+          expandedHeight: 380,
+          pinned: true,
+          backgroundColor: AppColors.primary,
+          leading: Padding(
+            padding: const EdgeInsets.all(8),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: AppColors.textPrimary.withValues(alpha: 0.2),
+                shape: BoxShape.circle,
               ),
-              loading: () => const IconButton(
-                icon: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppColors.surface,
-                  ),
-                ),
-                onPressed: null,
-              ),
-              error: (_, __) => IconButton(
-                icon: const Icon(
-                  Icons.favorite_border,
-                  color: AppColors.surface,
-                ),
-                onPressed: () => _toggleFavorite(recipe.id),
+              child: IconButton(
+                icon: const Icon(Icons.arrow_back, color: AppColors.surface),
+                onPressed: () => context.pop(),
               ),
             ),
           ),
-        ),
-      ],
-      flexibleSpace: FlexibleSpaceBar(
-        background: Stack(
-          fit: StackFit.expand,
-          children: [
-            _buildHeaderImage(recipe),
-            // 渐变遮罩（不拦截触摸，让手势穿透到 PageView）
-            IgnorePointer(
-              child: Container(
+          actions: [
+            // 收藏爱心
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: DecoratedBox(
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      AppColors.textPrimary.withValues(alpha: 0.15),
-                      Colors.transparent,
-                      Colors.transparent,
-                      AppColors.textPrimary.withValues(alpha: 0.75),
-                    ],
-                    stops: const [0.0, 0.25, 0.5, 1.0],
-                  ),
+                  color: AppColors.textPrimary.withValues(alpha: 0.2),
+                  shape: BoxShape.circle,
                 ),
-              ),
-            ),
-            // 底部信息（不拦截触摸，仅来源标签可点击）
-            Positioned(
-              bottom: 32,
-              left: 20,
-              right: 20,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    recipe.name,
-                    style: const TextStyle(
+                child: isFavoriteAsync.when(
+                  data: (isFavorite) => IconButton(
+                    icon: Icon(
+                      isFavorite ? Icons.favorite : Icons.favorite_border,
+                      color: isFavorite
+                          ? const Color(0xFFFF6B6B)
+                          : AppColors.surface,
+                    ),
+                    onPressed: () => _toggleFavorite(recipe.id),
+                  ),
+                  loading: () => const IconButton(
+                    icon: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.surface,
+                      ),
+                    ),
+                    onPressed: null,
+                  ),
+                  error: (_, __) => IconButton(
+                    icon: const Icon(
+                      Icons.favorite_border,
                       color: AppColors.surface,
-                      fontSize: 26,
-                      fontWeight: FontWeight.w800,
-                      shadows: [
-                        Shadow(
-                          offset: Offset(0, 2),
-                          blurRadius: 8,
-                          color: Color(0x4D000000),
-                        ),
-                      ],
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      if (recipe.source != RecipeSource.bundled &&
-                          recipe.source != RecipeSource.cloud)
-                        GestureDetector(
-                          onTap: recipe.source == RecipeSource.aiGenerated
-                              ? () => _navigateToSourceConversation(recipe)
-                              : null,
-                          child: _GlassTag(
-                            label: _getSourceLabel(recipe.source),
-                            highlight: true,
-                          ),
-                        ),
-                      _GlassTag(label: recipe.categoryName),
-                      if (recipe.estimatedCaloriesKcal != null)
-                        _GlassTag(
-                          label: '约 ${recipe.estimatedCaloriesKcal} 千卡',
-                        ),
-                      _GlassTag(label: '★' * recipe.difficulty.clamp(1, 5)),
-                      _GlassTag(label: '${recipe.steps.length} 步骤'),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            // 轮播指示器（多图时显示，不拦截触摸）
-            if (recipe.images.length > 1) ...[
-              Positioned(
-                bottom: 108,
-                left: 0,
-                right: 0,
-                child: IgnorePointer(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(recipe.images.length, (index) {
-                      final isActive = _currentPage == index;
-                      if (isActive && _progressController != null) {
-                        return _buildActiveDotWithProgress();
-                      }
-                      return _buildInactiveDot();
-                    }),
+                    onPressed: () => _toggleFavorite(recipe.id),
                   ),
                 ),
               ),
-              Positioned(
-                top: 80,
-                right: 16,
-                child: IgnorePointer(
+            ),
+          ],
+          flexibleSpace: FlexibleSpaceBar(
+            background: Stack(
+              fit: StackFit.expand,
+              children: [
+                _buildHeaderImage(recipe, gallery),
+                // 渐变遮罩（不拦截触摸，让手势穿透到 PageView）
+                IgnorePointer(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      '${_currentPage + 1} / ${recipe.images.length}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          AppColors.textPrimary.withValues(alpha: 0.15),
+                          Colors.transparent,
+                          Colors.transparent,
+                          AppColors.textPrimary.withValues(alpha: 0.75),
+                        ],
+                        stops: const [0.0, 0.25, 0.5, 1.0],
                       ),
                     ),
                   ),
                 ),
-              ),
-            ],
-          ],
-        ),
-      ),
+                // 底部信息（不拦截触摸，仅来源标签可点击）
+                Positioned(
+                  bottom: 32,
+                  left: 20,
+                  right: 20,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        recipe.name,
+                        style: const TextStyle(
+                          color: AppColors.surface,
+                          fontSize: 26,
+                          fontWeight: FontWeight.w800,
+                          shadows: [
+                            Shadow(
+                              offset: Offset(0, 2),
+                              blurRadius: 8,
+                              color: Color(0x4D000000),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          if (recipe.source != RecipeSource.bundled &&
+                              recipe.source != RecipeSource.cloud)
+                            GestureDetector(
+                              onTap: recipe.source == RecipeSource.aiGenerated
+                                  ? () => _navigateToSourceConversation(recipe)
+                                  : null,
+                              child: _GlassTag(
+                                label: _getSourceLabel(recipe.source),
+                                highlight: true,
+                              ),
+                            ),
+                          _GlassTag(label: recipe.categoryName),
+                          if (recipe.estimatedCaloriesKcal != null)
+                            _GlassTag(
+                              label: '约 ${recipe.estimatedCaloriesKcal} 千卡',
+                            ),
+                          _GlassTag(label: '★' * recipe.difficulty.clamp(1, 5)),
+                          _GlassTag(label: '${recipe.steps.length} 步骤'),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                // 轮播指示器（多图时显示，不拦截触摸）
+                if (gallery.length > 1) ...[
+                  Positioned(
+                    bottom: 108,
+                    left: 0,
+                    right: 0,
+                    child: IgnorePointer(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: List.generate(gallery.length, (index) {
+                          final isActive = _currentPage == index;
+                          if (isActive && _progressController != null) {
+                            return _buildActiveDotWithProgress();
+                          }
+                          return _buildInactiveDot();
+                        }),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 80,
+                    right: 16,
+                    child: IgnorePointer(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '${_currentPage + 1} / ${gallery.length}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
   /// 构建头部图片
-  Widget _buildHeaderImage(Recipe recipe) {
-    final recipeIdParts = recipe.id.split('_');
-    final recipeId = recipeIdParts.length > 1
-        ? recipeIdParts.sublist(1).join('_')
-        : recipe.id;
+  Widget _buildHeaderImage(Recipe recipe, List<_GalleryImage> gallery) {
+    final imageCount = gallery.length;
 
-    final imageCount = recipe.images.length;
-
-    if (imageCount > 1 && _pageController == null) {
+    if (imageCount > 1 &&
+        imageCount != _totalImages &&
+        _pendingCarouselCount != imageCount) {
+      _pendingCarouselCount = imageCount;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _initImageCarousel(imageCount);
+        if (mounted) {
+          _initImageCarousel(imageCount);
+          setState(() {});
+        }
       });
     }
 
-    // 单图或无图
-    if (imageCount <= 1) {
-      final singlePath = imageCount == 1 ? recipe.images.first : '';
-      if (_isDirectImagePath(singlePath)) {
-        return _buildImageWidget(singlePath);
-      }
-      // 内置/云端菜谱：详情图第一张，不存在则占位图
-      return CachedRecipeImage.detail(
-        category: recipe.category,
-        recipeId: recipeId,
-        imageIndex: 0,
-        width: double.infinity,
-        height: double.infinity,
-        fit: BoxFit.cover,
-        errorWidget: _buildImagePlaceholder(),
-      );
+    if (imageCount == 0) {
+      return const RecipePlaceholderImage.noImage();
+    }
+
+    if (imageCount == 1) {
+      return _buildGalleryImage(recipe, gallery.single);
     }
 
     // 多图轮播
@@ -539,21 +535,41 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
           }
         },
         itemBuilder: (context, index) {
-          final path = recipe.images[index];
-          if (_isDirectImagePath(path)) {
-            return _buildImageWidget(path);
-          }
-          return CachedRecipeImage.detail(
-            category: recipe.category,
-            recipeId: recipeId,
-            imageIndex: index,
-            width: double.infinity,
-            height: double.infinity,
-            fit: BoxFit.cover,
-            errorWidget: _buildImagePlaceholder(),
-          );
+          return _buildGalleryImage(recipe, gallery[index]);
         },
       ),
+    );
+  }
+
+  List<_GalleryImage> _galleryImages(Recipe recipe, String? aiCoverPath) {
+    final parts = splitRecipeImages(recipe);
+    final result = <_GalleryImage>[];
+    if (parts.customCover != null) {
+      result.add(_GalleryImage.direct(parts.customCover!));
+    } else if (aiCoverPath != null) {
+      result.add(_GalleryImage.direct(aiCoverPath));
+    }
+    for (final entry in parts.details.indexed) {
+      result.add(
+        isManagedRecipeDetailPath(entry.$2)
+            ? _GalleryImage.managedDetail(entry.$1)
+            : _GalleryImage.direct(entry.$2),
+      );
+    }
+    return result;
+  }
+
+  Widget _buildGalleryImage(Recipe recipe, _GalleryImage image) {
+    final path = image.path;
+    if (path != null) return _buildImageWidget(path);
+    return CachedRecipeImage.detail(
+      category: recipe.category,
+      recipeId: cachedDetailRecipeId(recipe),
+      imageIndex: image.detailIndex!,
+      width: double.infinity,
+      height: double.infinity,
+      fit: BoxFit.cover,
+      errorWidget: const RecipePlaceholderImage.notDownloaded(),
     );
   }
 
@@ -591,94 +607,13 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
     );
   }
 
-  Widget _buildImagePlaceholder() {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppColors.primary, AppColors.primaryDark],
-        ),
-      ),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.cloud_download_outlined,
-              size: 64,
-              color: AppColors.surface.withValues(alpha: 0.6),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '图片未下载',
-              style: TextStyle(
-                color: AppColors.surface.withValues(alpha: 0.9),
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '请前往数据同步页面下载',
-              style: TextStyle(
-                color: AppColors.surface.withValues(alpha: 0.7),
-                fontSize: 12,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   /// 构建图片组件（支持本地、网络、资源、Base64图片）
   Widget _buildImageWidget(String imagePath) {
     // 规范化路径：在Web端将反斜杠转换为正斜杠
     final normalizedPath = kIsWeb ? imagePath.replaceAll('\\', '/') : imagePath;
 
     // 错误时显示的占位符
-    Widget errorWidget = Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            AppColors.primary.withValues(alpha: 0.1),
-            AppColors.secondary.withValues(alpha: 0.1),
-          ],
-        ),
-      ),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.cloud_download_outlined,
-              size: 64,
-              color: AppColors.primary.withValues(alpha: 0.6),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '图片未下载',
-              style: TextStyle(
-                color: AppColors.textPrimary.withValues(alpha: 0.8),
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '请前往数据同步页面下载',
-              style: TextStyle(
-                color: AppColors.textSecondary.withValues(alpha: 0.8),
-                fontSize: 12,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    const errorWidget = RecipePlaceholderImage.loadFailed();
 
     // 判断图片类型
     if (normalizedPath.startsWith('data:image/')) {
@@ -1585,6 +1520,14 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
   void _showShareDialog(BuildContext context, Recipe recipe) {
     showRecipeShareSheet(context: context, ref: ref, recipe: recipe);
   }
+}
+
+class _GalleryImage {
+  final String? path;
+  final int? detailIndex;
+
+  const _GalleryImage.direct(this.path) : detailIndex = null;
+  const _GalleryImage.managedDetail(this.detailIndex) : path = null;
 }
 
 /// 毛玻璃标签（图片上的信息标签）

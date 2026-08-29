@@ -8,6 +8,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_snack_bar.dart';
 import '../../../../core/widgets/cached_recipe_image.dart';
+import '../../../../core/services/recipe_image_policy.dart';
 import 'share_bottom_sheet.dart';
 
 /// 菜谱卡片组件
@@ -16,10 +17,7 @@ import 'share_bottom_sheet.dart';
 class RecipeCard extends ConsumerWidget {
   final Recipe recipe;
 
-  const RecipeCard({
-    super.key,
-    required this.recipe,
-  });
+  const RecipeCard({super.key, required this.recipe});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -48,11 +46,7 @@ class RecipeCard extends ConsumerWidget {
                 children: [
                   _buildImage(),
                   if (_hasSourceBadge())
-                    Positioned(
-                      top: 6,
-                      right: 6,
-                      child: _buildSourceBadge(),
-                    ),
+                    Positioned(top: 6, right: 6, child: _buildSourceBadge()),
                 ],
               ),
             ),
@@ -135,7 +129,11 @@ class RecipeCard extends ConsumerWidget {
               title: const Text('分享'),
               onTap: () {
                 Navigator.pop(sheetContext);
-                showRecipeShareSheet(context: context, ref: ref, recipe: recipe);
+                showRecipeShareSheet(
+                  context: context,
+                  ref: ref,
+                  recipe: recipe,
+                );
               },
             ),
             ListTile(
@@ -154,23 +152,23 @@ class RecipeCard extends ConsumerWidget {
 
   /// 构建图片区域 - 使用缓存图片加载
   Widget _buildImage() {
-    final recipeIdParts = recipe.id.split('_');
-    final shortId = recipeIdParts.length > 1
-        ? recipeIdParts.sublist(1).join('_')
-        : recipe.id;
+    final imageParts = splitRecipeImages(recipe);
 
-    // 用户上传的图片（本地路径/base64/网络）优先作为封面
-    final firstImage = recipe.images.isNotEmpty ? recipe.images.first : '';
-    if (_isDirectImagePath(firstImage)) {
-      return _buildDirectImage(firstImage);
+    // 用户显式设置的封面优先。V2 远程详情图不会再被误判为封面。
+    final customCover = imageParts.customCover;
+    if (customCover != null && _isDirectImagePath(customCover)) {
+      return _buildDirectImage(customCover);
     }
 
     return CachedRecipeImage.coverWithFallback(
       category: recipe.category,
       recipeName: recipe.name,
-      fallbackRecipeId: shortId,
+      fallbackRecipeId: cachedDetailRecipeId(recipe),
       width: double.infinity,
       fit: BoxFit.cover,
+      errorWidget: imageParts.details.isEmpty
+          ? const RecipePlaceholderImage.noImage(compact: true)
+          : const RecipePlaceholderImage.notDownloaded(compact: true),
     );
   }
 
@@ -187,24 +185,32 @@ class RecipeCard extends ConsumerWidget {
     Widget image;
     if (path.startsWith('data:image/')) {
       final bytes = Uri.parse(path).data!.contentAsBytes();
-      image = Image.memory(bytes, width: double.infinity, fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _placeholder());
+      image = Image.memory(
+        bytes,
+        width: double.infinity,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _loadFailedPlaceholder(),
+      );
     } else if (path.startsWith('http://') || path.startsWith('https://')) {
-      image = Image.network(path, width: double.infinity, fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _placeholder());
+      image = Image.network(
+        path,
+        width: double.infinity,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _loadFailedPlaceholder(),
+      );
     } else {
-      image = Image.file(File(path), width: double.infinity, fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _placeholder());
+      image = Image.file(
+        File(path),
+        width: double.infinity,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _loadFailedPlaceholder(),
+      );
     }
     return image;
   }
 
-  Widget _placeholder() => Container(
-        color: AppColors.surfaceAlt,
-        child: const Center(
-          child: Icon(Icons.restaurant_menu, color: AppColors.textDisabled),
-        ),
-      );
+  Widget _loadFailedPlaceholder() =>
+      const RecipePlaceholderImage.loadFailed(compact: true);
 
   /// 构建收藏图标
   Widget _buildFavoriteIcon(WidgetRef ref) {
@@ -227,21 +233,15 @@ class RecipeCard extends ConsumerWidget {
           ref.invalidate(favoriteIdsProvider);
         },
         padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(
-          minWidth: 28,
-          minHeight: 28,
-        ),
+        constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
       ),
       loading: () => const SizedBox(
         width: 16,
         height: 16,
         child: CircularProgressIndicator(strokeWidth: 2),
       ),
-      error: (error, stack) => Icon(
-        Icons.favorite_border,
-        color: AppColors.textSecondary,
-        size: 16,
-      ),
+      error: (error, stack) =>
+          Icon(Icons.favorite_border, color: AppColors.textSecondary, size: 16),
     );
   }
 
@@ -262,11 +262,7 @@ class RecipeCard extends ConsumerWidget {
       final message = recipe.source == RecipeSource.bundled
           ? '【${recipe.name}】为内置菜谱，无法删除'
           : '【${recipe.name}】暂不支持删除';
-      AppSnackBar.show(
-        context,
-        message,
-        backgroundColor: AppColors.warning,
-      );
+      AppSnackBar.show(context, message, backgroundColor: AppColors.warning);
       return;
     }
 
@@ -309,11 +305,7 @@ class RecipeCard extends ConsumerWidget {
       AppSnackBar.show(context, '已删除「${recipe.name}」');
     } catch (e) {
       if (context.mounted) {
-        AppSnackBar.show(
-          context,
-          '删除失败: $e',
-          backgroundColor: AppColors.error,
-        );
+        AppSnackBar.show(context, '删除失败: $e', backgroundColor: AppColors.error);
       }
     }
   }
@@ -325,7 +317,11 @@ class RecipeCard extends ConsumerWidget {
 
   Widget _buildSourceBadge() {
     final (IconData icon, String label, Color color) = switch (recipe.source) {
-      RecipeSource.aiGenerated => (Icons.auto_awesome, 'AI', AppColors.secondary),
+      RecipeSource.aiGenerated => (
+        Icons.auto_awesome,
+        'AI',
+        AppColors.secondary,
+      ),
       RecipeSource.userCreated => (Icons.person, '自建', AppColors.primary),
       RecipeSource.scanned => (Icons.qr_code_scanner, '扫码', AppColors.primary),
       RecipeSource.userModified => (Icons.edit, '改', AppColors.plum),
