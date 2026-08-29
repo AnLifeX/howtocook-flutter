@@ -76,7 +76,16 @@ void main() {
       AIServiceFactory.resolveAPIFormat(
         config(modelId: 'deepseek-v4-flash-vision-exp'),
       ),
-      AIAPIFormat.responses,
+      AIAPIFormat.chatCompletions,
+    );
+    expect(
+      AIServiceFactory.resolveAPIFormat(
+        config(
+          apiUrl: 'https://opencode.ai/zen/go/v1/responses',
+          modelId: 'deepseek-v4-flash-vision-exp',
+        ),
+      ),
+      AIAPIFormat.chatCompletions,
     );
   });
 
@@ -141,6 +150,7 @@ void main() {
       expect(request['messages'][2]['role'], 'tool');
       expect(request['messages'][2]['tool_call_id'], 'call_1');
       expect(request['thinking']['type'], 'disabled');
+      expect(request['parallel_tool_calls'], isFalse);
     });
 
     test('Responses encodes flat functions and function_call_output', () {
@@ -158,6 +168,7 @@ void main() {
 
       expect(request['tools'][0]['name'], 'searchRecipes');
       expect(request['reasoning']['effort'], 'none');
+      expect(request['parallel_tool_calls'], isFalse);
       expect(
         input.where((item) => item['type'] == 'function_call'),
         hasLength(1),
@@ -217,7 +228,7 @@ void main() {
       expect(content.last['image_url']['url'], 'data:image/jpeg;base64,YWJj');
     });
 
-    test('Vision model automatically uses Responses image items', () {
+    test('Vision model keeps Chat Completions in automatic mode', () {
       final adapter =
           AIServiceFactory.create(
                 config(
@@ -227,7 +238,7 @@ void main() {
                   ),
                 ),
               )
-              as OpenAIAdapter;
+              as DeepSeekAdapter;
       final request = adapter.buildRequestForTesting(
         messages: [
           ChatMessage(
@@ -241,14 +252,56 @@ void main() {
           ),
         ],
       );
-      final input = request['input'] as List<dynamic>;
-      final messageContent = input.single['content'] as List<dynamic>;
+      final messages = request['messages'] as List<dynamic>;
+      final messageContent = messages.single['content'] as List<dynamic>;
 
       expect(
-        messageContent.where((item) => item['type'] == 'input_image'),
+        messageContent.where((item) => item['type'] == 'image_url'),
         hasLength(1),
       );
-      expect(messageContent.last['image_url'], 'data:image/png;base64,YWJj');
+      expect(
+        messageContent.last['image_url']['url'],
+        'data:image/png;base64,YWJj',
+      );
+    });
+
+    test('OpenAI-compatible DeepSeek Chat forwards thinking control', () {
+      final adapter = OpenAIAdapter(
+        apiKey: 'test-key',
+        modelId: 'deepseek-v4-flash',
+        customApiUrl: 'https://opencode.ai/zen/go/v1/chat/completions',
+        apiFormat: AIAPIFormat.chatCompletions,
+        enableThinking: false,
+      );
+
+      final request = adapter.buildRequestForTesting(
+        messages: history,
+        tools: tools,
+      );
+
+      expect(request['thinking']['type'], 'disabled');
+      expect(request['parallel_tool_calls'], isFalse);
+      expect(request['messages'][1]['reasoning_content'], contains('先搜索'));
+    });
+
+    test('factory keeps thinking toggle for custom OpenAI-compatible Chat', () {
+      final adapter =
+          AIServiceFactory.create(
+                const AIModelConfig(
+                  id: 'opencode-go',
+                  provider: AIProvider.openai,
+                  modelId: 'deepseek-v4-flash',
+                  displayName: 'DeepSeek via OpenCode Go',
+                  customApiKey: 'test-key',
+                  customApiUrl: 'https://opencode.ai/zen/go/v1',
+                  capabilities: ModelCapabilities(enableThinking: true),
+                ),
+              )
+              as OpenAIAdapter;
+
+      final request = adapter.buildRequestForTesting(messages: history);
+
+      expect(request['thinking']['type'], 'enabled');
     });
   });
 }

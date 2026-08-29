@@ -302,8 +302,9 @@ class OpenAIAdapter implements AIService {
       if (tools != null && tools.isNotEmpty) {
         requestData['tools'] = tools.map(_convertResponsesTool).toList();
         requestData['tool_choice'] = 'auto';
+        requestData['parallel_tool_calls'] = false;
       }
-      if (_isDeepSeekEndpoint) {
+      if (_isDeepSeekCompatible) {
         requestData['reasoning'] = {'effort': enableThinking ? 'high' : 'none'};
       }
       // prompt_cache_key 是 OpenAI 扩展字段；DeepSeek 自动缓存公共前缀，
@@ -334,6 +335,15 @@ class OpenAIAdapter implements AIService {
     if (tools != null && tools.isNotEmpty) {
       requestData['tools'] = tools.map(_convertTool).toList();
       requestData['tool_choice'] = 'auto';
+      // 部分 OpenAI 兼容网关无法稳定处理同一轮的多个工具调用。
+      // 串行调用也能完成相同任务，并保证每个 call_id 紧跟唯一结果。
+      requestData['parallel_tool_calls'] = false;
+    }
+
+    if (_isDeepSeekCompatible) {
+      requestData['thinking'] = {
+        'type': enableThinking ? 'enabled' : 'disabled',
+      };
     }
 
     return requestData;
@@ -446,18 +456,32 @@ class OpenAIAdapter implements AIService {
 
     if (toolCalls.isNotEmpty) {
       final textParts = content.whereType<String>().join();
-      return {
+      final convertedMessage = <String, dynamic>{
         'role': 'assistant',
         'content': textParts.isEmpty ? null : textParts,
         'tool_calls': toolCalls,
       };
+      if (message.role == MessageRole.assistant &&
+          message.reasoningContent != null &&
+          message.reasoningContent!.trim().isNotEmpty) {
+        convertedMessage['reasoning_content'] = message.reasoningContent!
+            .trim();
+      }
+      return convertedMessage;
     }
 
     if (content.length == 1 && content.first is String) {
-      return {
+      final convertedMessage = <String, dynamic>{
         'role': _convertRole(message.role),
         'content': content.first as String,
       };
+      if (message.role == MessageRole.assistant &&
+          message.reasoningContent != null &&
+          message.reasoningContent!.trim().isNotEmpty) {
+        convertedMessage['reasoning_content'] = message.reasoningContent!
+            .trim();
+      }
+      return convertedMessage;
     }
 
     final formatted = content.map((c) {
@@ -465,7 +489,16 @@ class OpenAIAdapter implements AIService {
       return c;
     }).toList();
 
-    return {'role': _convertRole(message.role), 'content': formatted};
+    final converted = <String, dynamic>{
+      'role': _convertRole(message.role),
+      'content': formatted,
+    };
+    if (message.role == MessageRole.assistant &&
+        message.reasoningContent != null &&
+        message.reasoningContent!.trim().isNotEmpty) {
+      converted['reasoning_content'] = message.reasoningContent!.trim();
+    }
+    return converted;
   }
 
   /// 转换角色
@@ -513,6 +546,9 @@ class OpenAIAdapter implements AIService {
 
   bool get _isDeepSeekEndpoint =>
       customApiUrl?.toLowerCase().contains('deepseek.com') == true;
+
+  bool get _isDeepSeekCompatible =>
+      _isDeepSeekEndpoint || modelId.toLowerCase().contains('deepseek');
 
   String? _sseData(String rawLine) {
     final line = rawLine.trim();
@@ -657,7 +693,12 @@ class OpenAIAdapter implements AIService {
       }
     }
 
-    return Exception('Network error: ${e.message}');
+    final detail = e.error?.toString().trim();
+    final message = e.message?.trim();
+    final reason = detail != null && detail.isNotEmpty
+        ? detail
+        : (message != null && message.isNotEmpty ? message : '连接被意外关闭');
+    return Exception('Network error: $reason');
   }
 }
 

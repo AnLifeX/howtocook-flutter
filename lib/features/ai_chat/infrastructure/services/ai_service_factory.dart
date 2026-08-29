@@ -69,6 +69,7 @@ class AIServiceFactory {
           modelId: config.modelId,
           customApiUrl: apiUrl,
           apiFormat: AIAPIFormat.chatCompletions,
+          enableThinking: config.capabilities.enableThinking,
           supportsImageInput: config.supportsImageInputEffective,
         );
 
@@ -86,11 +87,14 @@ class AIServiceFactory {
     if (url.contains('/anthropic') || url.endsWith('/messages')) {
       return AIAPIFormat.anthropicMessages;
     }
-    if (url.endsWith('/responses') || url.contains('lljby.cn')) {
-      return AIAPIFormat.responses;
+    // OpenCode Go 为 DeepSeek V4 系列公开的是 Chat Completions 端点。
+    // 自动模式下即使用户误填了 /responses，也按其模型路由表纠正；
+    // 显式选择 Responses 时仍由上方的配置优先级尊重用户选择。
+    if (url.contains('opencode.ai/zen/go') &&
+        config.modelId.toLowerCase().contains('deepseek')) {
+      return AIAPIFormat.chatCompletions;
     }
-    if (config.provider == AIProvider.deepseek &&
-        config.modelId.toLowerCase().contains('vision')) {
+    if (url.endsWith('/responses') || url.contains('lljby.cn')) {
       return AIAPIFormat.responses;
     }
     if (config.provider == AIProvider.claude) {

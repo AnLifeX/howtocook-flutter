@@ -39,9 +39,11 @@ class DeepSeekAdapter implements AIService {
 
   static String _normalizeBaseUrl(String url) {
     var normalized = url.trim().replaceFirst(RegExp(r'/+$'), '');
-    const suffix = '/chat/completions';
-    if (normalized.toLowerCase().endsWith(suffix)) {
-      normalized = normalized.substring(0, normalized.length - suffix.length);
+    for (final suffix in const ['/chat/completions', '/responses']) {
+      if (normalized.toLowerCase().endsWith(suffix)) {
+        normalized = normalized.substring(0, normalized.length - suffix.length);
+        break;
+      }
     }
     return normalized;
   }
@@ -380,6 +382,8 @@ class DeepSeekAdapter implements AIService {
     } else if (tools != null && tools.isNotEmpty) {
       requestData['tools'] = tools.map(_convertTool).toList();
       requestData['tool_choice'] = 'auto';
+      // 避免兼容网关漏配并行工具调用的 tool result。
+      requestData['parallel_tool_calls'] = false;
     }
 
     return requestData;
@@ -524,7 +528,12 @@ class DeepSeekAdapter implements AIService {
       }
     }
 
-    return Exception('Network error: ${e.message}');
+    final detail = e.error?.toString().trim();
+    final message = e.message?.trim();
+    final reason = detail != null && detail.isNotEmpty
+        ? detail
+        : (message != null && message.isNotEmpty ? message : '连接被意外关闭');
+    return Exception('Network error: $reason');
   }
 }
 
