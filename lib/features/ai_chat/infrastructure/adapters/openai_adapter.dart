@@ -16,6 +16,7 @@ class OpenAIAdapter implements AIService {
   final String modelId;
   final String? customApiUrl;
   final AIAPIFormat apiFormat;
+  final bool enableThinking;
 
   /// 默认 OpenAI API 地址
   static const String defaultApiUrl = 'https://api.openai.com/v1';
@@ -25,6 +26,7 @@ class OpenAIAdapter implements AIService {
     required this.modelId,
     this.customApiUrl,
     this.apiFormat = AIAPIFormat.auto,
+    this.enableThinking = false,
   }) : _dio = Dio() {
     final baseUrl = _normalizeBaseUrl(customApiUrl ?? defaultApiUrl);
     _dio.options.baseUrl = baseUrl;
@@ -98,7 +100,7 @@ class OpenAIAdapter implements AIService {
         }
       }
     } on DioException catch (e) {
-      throw _handleDioException(e);
+      throw await _handleDioException(e);
     } catch (e) {
       throw Exception('OpenAI API streaming failed: $e');
     }
@@ -236,9 +238,12 @@ class OpenAIAdapter implements AIService {
         role: MessageRole.assistant,
         content: messageContent,
         timestamp: DateTime.now(),
+        reasoningContent: reasoningBuffer.isEmpty
+            ? null
+            : reasoningBuffer.toString(),
       );
     } on DioException catch (e) {
-      throw _handleDioException(e);
+      throw await _handleDioException(e);
     } catch (e) {
       throw Exception('OpenAI API call failed: $e');
     }
@@ -297,6 +302,9 @@ class OpenAIAdapter implements AIService {
         requestData['tools'] = tools.map(_convertResponsesTool).toList();
         requestData['tool_choice'] = 'auto';
       }
+      if (_isDeepSeekEndpoint) {
+        requestData['reasoning'] = {'effort': enableThinking ? 'high' : 'none'};
+      }
       // prompt_cache_key 是 OpenAI 扩展字段；DeepSeek 自动缓存公共前缀，
       // 官方 Responses 端点不需要也不应接收该字段。
       if (customApiUrl == null || customApiUrl!.contains('openai.com')) {
@@ -343,6 +351,19 @@ class OpenAIAdapter implements AIService {
     ChatMessage message,
   ) sync* {
     final content = <Map<String, dynamic>>[];
+
+    // DeepSeek Responses 是无状态接口。工具调用后的下一轮必须把首轮
+    // 返回的 reasoning item 和 function_call 一起带回，才能完整还原上下文。
+    if (message.role == MessageRole.assistant &&
+        message.reasoningContent != null &&
+        message.reasoningContent!.trim().isNotEmpty) {
+      yield {
+        'type': 'reasoning',
+        'content': [
+          {'type': 'reasoning_text', 'text': message.reasoningContent!.trim()},
+        ],
+      };
+    }
 
     for (final item in message.content) {
       if (item is TextContent) {
@@ -489,6 +510,9 @@ class OpenAIAdapter implements AIService {
     return normalized;
   }
 
+  bool get _isDeepSeekEndpoint =>
+      customApiUrl?.toLowerCase().contains('deepseek.com') == true;
+
   String? _sseData(String rawLine) {
     final line = rawLine.trim();
     if (!line.startsWith('data:')) return null;
@@ -579,10 +603,24 @@ class OpenAIAdapter implements AIService {
   }
 
   /// 处理 Dio 异常
-  Exception _handleDioException(DioException e) {
+  Future<Exception> _handleDioException(DioException e) async {
     if (e.response != null) {
       final statusCode = e.response!.statusCode;
       var data = e.response!.data;
+
+      // ResponseType.stream 下，Dio 的错误响应也是 ResponseBody；读取后才能
+      // 显示服务端返回的具体 400 原因，而不是笼统的 “OpenAI API error”。
+      if (data is ResponseBody) {
+        try {
+          final bytes = <int>[];
+          await for (final chunk in data.stream) {
+            bytes.addAll(chunk);
+          }
+          data = utf8.decode(bytes);
+        } catch (_) {
+          data = null;
+        }
+      }
 
       // 如果 data 是字符串，尝试解析为 JSON
       if (data is String) {

@@ -50,6 +50,7 @@ class AIServiceFactory {
                   ? 'https://api.deepseek.com'
                   : null),
           apiFormat: AIAPIFormat.responses,
+          enableThinking: config.capabilities.enableThinking,
         );
 
       case AIAPIFormat.chatCompletions:

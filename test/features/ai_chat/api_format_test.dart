@@ -101,6 +101,7 @@ void main() {
           ),
         ],
         timestamp: DateTime.fromMillisecondsSinceEpoch(1),
+        reasoningContent: '需要先搜索鸡蛋相关菜谱。',
       ),
       ChatMessage(
         id: 'tool-result',
@@ -146,6 +147,7 @@ void main() {
       final input = request['input'] as List<dynamic>;
 
       expect(request['tools'][0]['name'], 'searchRecipes');
+      expect(request['reasoning']['effort'], 'none');
       expect(
         input.where((item) => item['type'] == 'function_call'),
         hasLength(1),
@@ -154,7 +156,29 @@ void main() {
         input.where((item) => item['type'] == 'function_call_output'),
         hasLength(1),
       );
+      final reasoning = input.singleWhere(
+        (item) => item['type'] == 'reasoning',
+      );
+      expect(reasoning['content'][0]['type'], 'reasoning_text');
+      expect(reasoning['content'][0]['text'], contains('先搜索'));
       expect(request, isNot(contains('prompt_cache_key')));
+    });
+
+    test('Responses explicitly enables thinking when requested', () {
+      final adapter = OpenAIAdapter(
+        apiKey: 'test-key',
+        modelId: 'deepseek-v4-flash',
+        customApiUrl: 'https://api.deepseek.com',
+        apiFormat: AIAPIFormat.responses,
+        enableThinking: true,
+      );
+
+      final request = adapter.buildRequestForTesting(
+        messages: history,
+        tools: tools,
+      );
+
+      expect(request['reasoning']['effort'], 'high');
     });
   });
 }
