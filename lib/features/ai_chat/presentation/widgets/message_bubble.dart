@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -235,7 +238,11 @@ class _MessageBubbleState extends State<MessageBubble> {
                           (content) => content.when(
                             text: (text) => _buildTextContent(text, isUser),
                             image: (data, mimeType, localPath) =>
-                                _buildImageContent(localPath ?? data, isUser),
+                                _buildImageContent(
+                                  data: data,
+                                  mimeType: mimeType,
+                                  localPath: localPath,
+                                ),
                             toolUse: (toolUseId, name, input) =>
                                 _buildToolUseContent(name, isUser),
                             toolResult: (toolUseId, result) =>
@@ -446,22 +453,106 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   /// 构建图片内容
-  Widget _buildImageContent(String imagePath, bool isUser) {
+  Widget _buildImageContent({
+    required String data,
+    String? mimeType,
+    String? localPath,
+  }) {
+    final provider = _resolveImageProvider(data: data, localPath: localPath);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Image.network(
-          imagePath,
-          width: 200,
-          errorBuilder: (context, error, stackTrace) {
-            return Container(
-              width: 200,
-              height: 150,
-              color: AppColors.surfaceAlt,
-              child: const Icon(Icons.broken_image, size: 48),
-            );
-          },
+      child: GestureDetector(
+        onTap: provider == null ? null : () => _showImagePreview(provider),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: provider == null
+              ? _buildBrokenImage()
+              : Image(
+                  image: provider,
+                  width: 220,
+                  height: 165,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) =>
+                      _buildBrokenImage(),
+                ),
+        ),
+      ),
+    );
+  }
+
+  ImageProvider? _resolveImageProvider({
+    required String data,
+    String? localPath,
+  }) {
+    if (localPath != null && localPath.isNotEmpty) {
+      final file = File(localPath);
+      if (file.existsSync()) return FileImage(file);
+    }
+    if (data.isEmpty) return null;
+    if (data.startsWith('http://') || data.startsWith('https://')) {
+      return NetworkImage(data);
+    }
+    try {
+      final encoded = data.contains(',') ? data.split(',').last : data;
+      return MemoryImage(base64Decode(encoded));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Widget _buildBrokenImage() {
+    return Container(
+      width: 220,
+      height: 140,
+      color: AppColors.surfaceAlt,
+      alignment: Alignment.center,
+      child: const Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.broken_image_outlined, size: 36),
+          SizedBox(height: 6),
+          Text('图片文件不可用'),
+        ],
+      ),
+    );
+  }
+
+  void _showImagePreview(ImageProvider provider) {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (dialogContext) => Dialog.fullscreen(
+        backgroundColor: Colors.black,
+        child: SafeArea(
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: InteractiveViewer(
+                  minScale: 0.8,
+                  maxScale: 5,
+                  child: Center(
+                    child: Image(
+                      image: provider,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) => const Text(
+                        '图片文件不可用',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 8,
+                right: 8,
+                child: IconButton.filledTonal(
+                  tooltip: '关闭预览',
+                  onPressed: () => Navigator.pop(dialogContext),
+                  icon: const Icon(Icons.close),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
