@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.4.10] - 2026-08-30
+
 ### 新增
 - **V2 数据后台下载**：菜谱与教程数据改用 Android 系统后台下载任务，离开设置页或应用退到后台后继续执行，并支持暂停、继续和取消。
 
@@ -344,7 +346,11 @@
 ### 修复
 - 解决 AGP 8 下部分三方插件（如 `install_plugin`）缺失 `namespace` 导致的构建失败。
 
-[Unreleased]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.4.9...HEAD
+[Unreleased]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.4.10...HEAD
+[0.4.10]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.4.9...v0.4.10
+[0.4.9]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.4.8...v0.4.9
+[0.4.8]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.4.7...v0.4.8
+[0.4.7]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.4.6...v0.4.7
 [0.4.6]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.4.5...v0.4.6
 [0.4.5]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.4.3...v0.4.4
