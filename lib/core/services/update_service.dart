@@ -103,7 +103,7 @@ class UpdateService {
 
   static const String _skippedVersionKey = 'skipped_version_code';
   static const String _defaultManifestUrl =
-      'https://github.com/Gaq152/howtocook-flutter/releases/latest/download/manifest.json';
+      'https://github.com/AnLifeX/howtocook-flutter/releases/latest/download/manifest.json';
 
   String get _manifestUrl {
     final override = dotenv.env['RELEASE_MANIFEST_URL']?.trim();

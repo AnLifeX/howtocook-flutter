@@ -54,4 +54,24 @@ void main() {
     expect(item.status, SyncItemStatus.error);
     expect(item.error, 'manifest 写入失败');
   });
+
+  test('maps a paused background data download to resume controls', () {
+    final item = mapDataSyncStateToItemState(
+      const DataSyncState(
+        status: SyncStatus.paused,
+        progress: 63,
+        downloadedRecipes: 220,
+        totalRecipes: 367,
+        downloadedTips: 4,
+        totalTips: 18,
+        downloadedImages: 0,
+        totalImages: 0,
+        message: '数据下载已暂停',
+      ),
+    );
+
+    expect(item.status, SyncItemStatus.paused);
+    expect(item.progress, 63);
+    expect(item.message, '数据下载已暂停');
+  });
 }

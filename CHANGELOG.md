@@ -7,6 +7,18 @@
 
 ## [Unreleased]
 
+### 新增
+- **V2 数据后台下载**：菜谱与教程数据改用 Android 系统后台下载任务，离开设置页或应用退到后台后继续执行，并支持暂停、继续和取消。
+
+### 变更
+- **菜谱图片顺序**：详情页统一按“用户封面或 AI 封面 → 详情图”展示；编辑页可预览 AI 封面，并将封面与详情图分开管理。
+- **仓库地址迁移**：静态数据源、云端菜谱查询、应用更新检查、APK 下载入口及项目链接全部迁移到 `AnLifeX`。
+
+### 修复
+- **V2 离线图片无法显示**：V2 详情图优先读取已下载的 UUID 缓存，不再被失效远程 URL 绕过；后台下载路径使用可跨应用重启解析的目录配置。
+- **图片状态混淆**：V1/V2 共用“暂无图片、图片未下载、图片加载失败”三种状态；无配图菜谱不再误报为未下载。
+- **编辑页封面裂图**：静态详情图不再被误当成封面，AI 封面和本地替换封面均可正确预览与保存。
+
 ## [0.4.9] - 2026-08-29
 
 ### 新增
@@ -332,23 +344,23 @@
 ### 修复
 - 解决 AGP 8 下部分三方插件（如 `install_plugin`）缺失 `namespace` 导致的构建失败。
 
-[Unreleased]: https://github.com/Gaq152/howtocook-flutter/compare/v0.4.6...HEAD
-[0.4.6]: https://github.com/Gaq152/howtocook-flutter/compare/v0.4.5...v0.4.6
-[0.4.5]: https://github.com/Gaq152/howtocook-flutter/compare/v0.4.4...v0.4.5
-[0.4.4]: https://github.com/Gaq152/howtocook-flutter/compare/v0.4.3...v0.4.4
-[0.4.3]: https://github.com/Gaq152/howtocook-flutter/compare/v0.4.2...v0.4.3
-[0.4.2]: https://github.com/Gaq152/howtocook-flutter/compare/v0.4.1...v0.4.2
-[0.4.1]: https://github.com/Gaq152/howtocook-flutter/compare/v0.4.0...v0.4.1
-[0.4.0]: https://github.com/Gaq152/howtocook-flutter/compare/v0.3.8...v0.4.0
-[0.3.8]: https://github.com/Gaq152/howtocook-flutter/compare/v0.3.7...v0.3.8
-[0.3.7]: https://github.com/Gaq152/howtocook-flutter/compare/v0.3.6...v0.3.7
-[0.3.6]: https://github.com/Gaq152/howtocook-flutter/compare/v0.3.5...v0.3.6
-[0.3.5]: https://github.com/Gaq152/howtocook-flutter/compare/v0.3.4...v0.3.5
-[0.3.4]: https://github.com/Gaq152/howtocook-flutter/compare/v0.3.3...v0.3.4
-[0.3.3]: https://github.com/Gaq152/howtocook-flutter/compare/v0.3.2...v0.3.3
-[0.3.2]: https://github.com/Gaq152/howtocook-flutter/compare/v0.3.1...v0.3.2
-[0.3.1]: https://github.com/Gaq152/howtocook-flutter/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/Gaq152/howtocook-flutter/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/Gaq152/howtocook-flutter/compare/v0.1.1...v0.2.0
-[0.1.1]: https://github.com/Gaq152/howtocook-flutter/compare/v0.1.0...v0.1.1
-[0.1.0]: https://github.com/Gaq152/howtocook-flutter/releases/tag/v0.1.0
+[Unreleased]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.4.9...HEAD
+[0.4.6]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.4.5...v0.4.6
+[0.4.5]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.4.4...v0.4.5
+[0.4.4]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.4.3...v0.4.4
+[0.4.3]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.4.2...v0.4.3
+[0.4.2]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.4.1...v0.4.2
+[0.4.1]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.3.8...v0.4.0
+[0.3.8]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.3.7...v0.3.8
+[0.3.7]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.3.6...v0.3.7
+[0.3.6]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.3.5...v0.3.6
+[0.3.5]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.3.4...v0.3.5
+[0.3.4]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.3.3...v0.3.4
+[0.3.3]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.3.2...v0.3.3
+[0.3.2]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.3.1...v0.3.2
+[0.3.1]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.1.1...v0.2.0
+[0.1.1]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/AnLifeX/howtocook-flutter/releases/tag/v0.1.0

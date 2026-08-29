@@ -108,22 +108,24 @@ class ImageDownloadManager extends _$ImageDownloadManager {
     for (final task in pendingTasks) {
       if (task.replaceExisting) await _recoverPreviousFile(task);
       final file = File(_downloadPath(task));
-      final dir = file.parent.path;
-      final filename = file.uri.pathSegments.last;
       await file.parent.create(recursive: true);
       if (task.replaceExisting && await file.exists()) {
         await file.delete();
       }
 
+      final (baseDirectory, directory, filename) = await Task.split(
+        filePath: file.path,
+      );
       bdTasks.add(
         bd.DownloadTask(
           url: task.imageUrl,
           filename: filename,
-          directory: dir,
-          baseDirectory: BaseDirectory.root,
+          directory: directory,
+          baseDirectory: baseDirectory,
           group: _taskGroup,
           updates: Updates.status,
           retries: 1,
+          allowPause: true,
           priority: task.priority,
         ),
       );

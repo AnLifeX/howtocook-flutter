@@ -96,7 +96,9 @@ class _DataSyncWidgetState extends ConsumerState<DataSyncWidget> {
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton(
-        onPressed: state.status == SyncStatus.downloading
+        onPressed:
+            state.status == SyncStatus.downloading ||
+                state.status == SyncStatus.paused
             ? null
             : () {
                 final config = SyncConfig(
@@ -121,6 +123,8 @@ class _DataSyncWidgetState extends ConsumerState<DataSyncWidget> {
         return '检查更新中...';
       case SyncStatus.downloading:
         return '同步中...';
+      case SyncStatus.paused:
+        return '同步已暂停';
       case SyncStatus.completed:
         return '同步完成';
       case SyncStatus.error:

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
+import 'package:background_downloader/background_downloader.dart' as bd;
 import 'package:path_provider/path_provider.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
@@ -10,6 +11,8 @@ import 'package:howtocook/core/services/cover_manifest_service.dart';
 import 'package:howtocook/core/services/image_download_manager.dart';
 import 'package:howtocook/core/services/recipe_id_migration_service.dart';
 import 'package:howtocook/core/storage/hive_service.dart';
+import 'package:howtocook/features/recipe/application/providers/recipe_providers.dart';
+import 'package:howtocook/features/tips/application/providers/tip_providers.dart';
 
 part 'data_sync_service.g.dart';
 part 'data_sync_service.freezed.dart';
@@ -19,6 +22,7 @@ enum SyncStatus {
   idle, // 空闲
   checking, // 检查更新
   downloading, // 下载中
+  paused, // 已暂停
   completed, // 已完成
   error, // 出错
 }
@@ -39,19 +43,22 @@ class SyncConfig {
 }
 
 /// 数据同步服务
-@riverpod
+@Riverpod(keepAlive: true)
 class DataSyncService extends _$DataSyncService {
   late String _remoteBaseUrl;
   String _remoteDataBasePath = '';
   String _localDataBasePath = '';
   int _remoteSchemaVersion = 1;
   static const String _localDataDirName = 'recipe_data';
+  static const String _dataTaskGroup = 'howtocook-recipe-data';
+  final List<bd.DownloadTask> _activeDataTasks = [];
+  bool _cancelRequested = false;
 
   static const List<String> _candidateBaseUrls = [
-    'https://gaq152.github.io/HowToCook-assets',
-    'https://cdn.jsdelivr.net/gh/Gaq152/HowToCook-assets@main',
-    'https://fastly.jsdelivr.net/gh/Gaq152/HowToCook-assets@main',
-    'https://ghfast.top/https://raw.githubusercontent.com/Gaq152/HowToCook-assets/refs/heads/main',
+    'https://anlifex.github.io/HowToCook-assets',
+    'https://cdn.jsdelivr.net/gh/AnLifeX/HowToCook-assets@main',
+    'https://fastly.jsdelivr.net/gh/AnLifeX/HowToCook-assets@main',
+    'https://ghfast.top/https://raw.githubusercontent.com/AnLifeX/HowToCook-assets/refs/heads/main',
   ];
 
   final Dio _dio = Dio();
@@ -74,6 +81,12 @@ class DataSyncService extends _$DataSyncService {
 
   /// 开始数据同步
   Future<void> startSync(SyncConfig config) async {
+    if (state.status == SyncStatus.downloading ||
+        state.status == SyncStatus.paused ||
+        state.status == SyncStatus.checking) {
+      return;
+    }
+    _cancelRequested = false;
     try {
       state = state.copyWith(
         status: SyncStatus.checking,
@@ -147,73 +160,25 @@ class DataSyncService extends _$DataSyncService {
         '📥 开始下载 ${recipeUpdates.length} 个食谱与 ${tipUpdates.length} 个教程更新...',
       );
 
-      int downloadedRecipes = 0;
-      int downloadedTips = 0;
-      int completedJsonTasks = 0;
-      int failedJsonTasks = 0;
       final coverImageTasks = <DownloadTask>[];
       final detailImageTasks = <DownloadTask>[];
+      final jsonDownloaded = await _downloadJsonBatch(
+        recipeUpdates: recipeUpdates,
+        tipUpdates: tipUpdates,
+        onlyWifi: config.onlyWifi,
+      );
+      if (!jsonDownloaded || _cancelRequested) {
+        return;
+      }
 
       for (final update in recipeUpdates) {
-        try {
-          final success = await downloadRecipeJson(update);
-          if (success) {
-            downloadedRecipes++;
-            completedJsonTasks++;
-            final progress =
-                5 + ((completedJsonTasks / totalJsonTasks) * 85).round();
-            state = state.copyWith(
-              downloadedRecipes: downloadedRecipes,
-              progress: progress,
-              message: '正在下载菜谱 $downloadedRecipes/${recipeUpdates.length}',
-            );
-
-            if (config.downloadCoverImages) {
-              final coverTask = await extractCoverImageTask(update);
-              if (coverTask != null) {
-                coverImageTasks.add(coverTask);
-              }
-            }
-
-            if (config.downloadDetailImages) {
-              final detailTasks = await extractDetailImageTasks(update);
-              detailImageTasks.addAll(detailTasks);
-            }
-          }
-        } catch (e) {
-          debugPrint('❌ 下载食谱失败: ${update.category}/${update.recipeId}, 错误: $e');
+        if (config.downloadCoverImages) {
+          final coverTask = await extractCoverImageTask(update);
+          if (coverTask != null) coverImageTasks.add(coverTask);
         }
-      }
-
-      for (final tipUpdate in tipUpdates) {
-        try {
-          final success = await downloadTipJson(tipUpdate);
-          if (success) {
-            downloadedTips++;
-            completedJsonTasks++;
-            final progress =
-                5 + ((completedJsonTasks / totalJsonTasks) * 85).round();
-            state = state.copyWith(
-              downloadedTips: downloadedTips,
-              progress: progress,
-              message: '正在下载教程 $downloadedTips/${tipUpdates.length}',
-            );
-          }
-        } catch (e) {
-          debugPrint(
-            '❌ 下载教程失败: ${tipUpdate.category}/${tipUpdate.tipId}, 错误: $e',
-          );
+        if (config.downloadDetailImages) {
+          detailImageTasks.addAll(await extractDetailImageTasks(update));
         }
-      }
-
-      failedJsonTasks += recipeUpdates.length - downloadedRecipes;
-      failedJsonTasks += tipUpdates.length - downloadedTips;
-      if (failedJsonTasks > 0 || completedJsonTasks != totalJsonTasks) {
-        state = state.copyWith(
-          status: SyncStatus.error,
-          error: '有 $failedJsonTasks 个数据文件下载失败，已保留当前数据版本',
-        );
-        return;
       }
 
       // 5. 先原子激活 V2；迁移失败时 legacyIds 仍能兼容旧收藏。
@@ -242,11 +207,181 @@ class DataSyncService extends _$DataSyncService {
         progress: 100,
         message: 'V2 数据已下载、迁移并激活',
       );
+      _refreshRecipeProviders();
       debugPrint('✅ 数据同步完成');
     } catch (e) {
+      if (_cancelRequested) return;
       state = state.copyWith(status: SyncStatus.error, error: e.toString());
       debugPrint('❌ 数据同步失败: $e');
+    } finally {
+      if (state.status != SyncStatus.paused) _activeDataTasks.clear();
     }
+  }
+
+  void _refreshRecipeProviders() {
+    ref.invalidate(bundledDataLoaderProvider);
+    ref.invalidate(recipeRepositoryProvider);
+    ref.invalidate(manifestProvider);
+    ref.invalidate(allRecipesProvider);
+    ref.invalidate(favoriteRecipesProvider);
+    ref.invalidate(favoriteIdsProvider);
+    ref.invalidate(tipRepositoryProvider);
+    ref.invalidate(allTipsProvider);
+    ref.invalidate(favoriteTipsProvider);
+  }
+
+  Future<bool> _downloadJsonBatch({
+    required List<RecipeUpdate> recipeUpdates,
+    required List<TipUpdate> tipUpdates,
+    required bool onlyWifi,
+  }) async {
+    final documents = await getApplicationDocumentsDirectory();
+    final tasks = <bd.DownloadTask>[];
+    final recipeTaskIds = <String>{};
+    final tipTaskIds = <String>{};
+
+    Future<void> addTask({
+      required String taskId,
+      required String url,
+      required String localPath,
+      required bool recipe,
+    }) async {
+      final target = File(localPath);
+      await target.parent.create(recursive: true);
+      final (baseDirectory, directory, filename) = await bd.Task.split(
+        filePath: target.path,
+      );
+      tasks.add(
+        bd.DownloadTask(
+          taskId: taskId,
+          url: url,
+          filename: filename,
+          directory: directory,
+          baseDirectory: baseDirectory,
+          group: _dataTaskGroup,
+          updates: bd.Updates.status,
+          retries: 2,
+          allowPause: true,
+          priority: 0,
+          requiresWiFi: onlyWifi,
+          displayName: recipe ? '菜谱数据' : '烹饪教程',
+        ),
+      );
+      (recipe ? recipeTaskIds : tipTaskIds).add(taskId);
+    }
+
+    for (final update in recipeUpdates) {
+      await addTask(
+        taskId: 'data_recipe_${update.recipeId}',
+        url:
+            '$_remoteBaseUrl/$_remoteDataBasePath/recipes/${update.category}/${update.recipeId}.json',
+        localPath:
+            '${documents.path}/$_localDataDirName/$_remoteDataBasePath/recipes/${update.category}/${update.recipeId}.json',
+        recipe: true,
+      );
+    }
+    for (final update in tipUpdates) {
+      await addTask(
+        taskId: 'data_tip_${update.tipId}',
+        url:
+            '$_remoteBaseUrl/$_remoteDataBasePath/tips/${update.category}/${update.tipId}.json',
+        localPath:
+            '${documents.path}/$_localDataDirName/$_remoteDataBasePath/tips/${update.category}/${update.tipId}.json',
+        recipe: false,
+      );
+    }
+
+    _activeDataTasks
+      ..clear()
+      ..addAll(tasks);
+    final completedRecipeIds = <String>{};
+    final completedTipIds = <String>{};
+    final downloader = bd.FileDownloader();
+    await downloader.ready;
+    downloader.configureNotificationForGroup(
+      _dataTaskGroup,
+      running: const bd.TaskNotification(
+        '正在下载 V2 菜谱数据',
+        '{progress} · {networkSpeed}',
+      ),
+      paused: const bd.TaskNotification('V2 数据下载已暂停', '返回应用可继续或取消'),
+      complete: const bd.TaskNotification('V2 数据下载完成', '正在校验并激活数据'),
+      error: const bd.TaskNotification('V2 数据下载失败', '请返回应用重试'),
+      progressBar: true,
+    );
+
+    final batch = await downloader.downloadBatch(
+      tasks,
+      batchProgressCallback: (succeeded, failed) {
+        if (_cancelRequested || state.status == SyncStatus.paused) return;
+        final completed = succeeded + failed;
+        state = state.copyWith(
+          progress: 5 + ((completed / tasks.length) * 85).round(),
+          message: '后台下载数据 $completed/${tasks.length}',
+        );
+      },
+      taskStatusCallback: (update) {
+        if (update.status != bd.TaskStatus.complete) return;
+        final taskId = update.task.taskId;
+        if (recipeTaskIds.contains(taskId)) completedRecipeIds.add(taskId);
+        if (tipTaskIds.contains(taskId)) completedTipIds.add(taskId);
+        if (_cancelRequested) return;
+        state = state.copyWith(
+          downloadedRecipes: completedRecipeIds.length,
+          downloadedTips: completedTipIds.length,
+        );
+      },
+    );
+
+    if (_cancelRequested) return false;
+    if (batch.numFailed > 0 ||
+        completedRecipeIds.length != recipeUpdates.length ||
+        completedTipIds.length != tipUpdates.length) {
+      state = state.copyWith(
+        status: SyncStatus.error,
+        error: '有 ${batch.numFailed} 个数据文件下载失败，已保留当前数据版本',
+      );
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> pauseSync() async {
+    if (state.status != SyncStatus.downloading || _activeDataTasks.isEmpty) {
+      return;
+    }
+    final paused = await bd.FileDownloader().pauseAll(tasks: _activeDataTasks);
+    if (paused.isEmpty) return;
+    state = state.copyWith(status: SyncStatus.paused, message: '数据下载已暂停');
+  }
+
+  Future<void> resumeSync() async {
+    if (state.status != SyncStatus.paused || _activeDataTasks.isEmpty) return;
+    state = state.copyWith(
+      status: SyncStatus.downloading,
+      message: '正在继续后台下载...',
+    );
+    await bd.FileDownloader().resumeAll(tasks: _activeDataTasks);
+  }
+
+  Future<void> cancelSync() async {
+    if (_activeDataTasks.isEmpty) return;
+    _cancelRequested = true;
+    await bd.FileDownloader().cancelTasksWithIds(
+      _activeDataTasks.map((task) => task.taskId),
+    );
+    _activeDataTasks.clear();
+    state = const DataSyncState(
+      status: SyncStatus.idle,
+      progress: 0,
+      downloadedRecipes: 0,
+      totalRecipes: 0,
+      downloadedTips: 0,
+      totalTips: 0,
+      downloadedImages: 0,
+      totalImages: 0,
+      message: '数据下载已取消',
+    );
   }
 
   /// 下载远程清单文件

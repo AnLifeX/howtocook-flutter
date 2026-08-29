@@ -7,7 +7,7 @@ part of 'image_download_manager.dart';
 // **************************************************************************
 
 String _$imageDownloadManagerHash() =>
-    r'3dce6662be5848c615c8f1f00eba16644f158f08';
+    r'd85ed8368cce1e496135c94043eb3793f867ed60';
 
 /// See also [ImageDownloadManager].
 @ProviderFor(ImageDownloadManager)

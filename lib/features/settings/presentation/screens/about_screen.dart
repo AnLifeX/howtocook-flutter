@@ -135,7 +135,7 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
                       title: const Text('anlife'),
                       subtitle: const Text('独立开发者'),
                       trailing: const Icon(Icons.chevron_right),
-                      onTap: () => _openUrl('https://github.com/Gaq152'),
+                      onTap: () => _openUrl('https://github.com/AnLifeX'),
                     ),
                   ],
                 ),
@@ -158,7 +158,7 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
                       subtitle: const Text('在 GitHub 提交 Issue'),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => _openUrl(
-                          'https://github.com/Gaq152/howtocook-flutter/issues'),
+                          'https://github.com/AnLifeX/howtocook-flutter/issues'),
                     ),
                   ],
                 ),

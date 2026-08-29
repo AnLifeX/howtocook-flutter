@@ -16,10 +16,10 @@ class MCPService {
   String? _v2CatalogBaseUrl;
 
   static const _v2CatalogCandidates = [
-    'https://gaq152.github.io/HowToCook-assets',
-    'https://cdn.jsdelivr.net/gh/Gaq152/HowToCook-assets@main',
-    'https://fastly.jsdelivr.net/gh/Gaq152/HowToCook-assets@main',
-    'https://ghfast.top/https://raw.githubusercontent.com/Gaq152/HowToCook-assets/refs/heads/main',
+    'https://anlifex.github.io/HowToCook-assets',
+    'https://cdn.jsdelivr.net/gh/AnLifeX/HowToCook-assets@main',
+    'https://fastly.jsdelivr.net/gh/AnLifeX/HowToCook-assets@main',
+    'https://ghfast.top/https://raw.githubusercontent.com/AnLifeX/HowToCook-assets/refs/heads/main',
   ];
 
   MCPService() : _dio = Dio() {

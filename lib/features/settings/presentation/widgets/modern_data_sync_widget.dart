@@ -11,9 +11,12 @@ import 'package:howtocook/features/tips/application/providers/tip_providers.dart
 
 SyncItemState mapDataSyncStateToItemState(DataSyncState state) {
   final status = switch (state.status) {
+    SyncStatus.idle => SyncItemStatus.idle,
+    SyncStatus.checking => SyncItemStatus.checking,
+    SyncStatus.downloading => SyncItemStatus.downloading,
+    SyncStatus.paused => SyncItemStatus.paused,
     SyncStatus.error => SyncItemStatus.error,
     SyncStatus.completed => SyncItemStatus.completed,
-    _ => SyncItemStatus.downloading,
   };
   return SyncItemState(
     type: SyncItemType.json,
@@ -71,6 +74,13 @@ class _ModernDataSyncWidgetState extends ConsumerState<ModernDataSyncWidget> {
 
   /// 恢复正在进行的下载状态
   void _restoreDownloadState() {
+    final dataState = ref.read(dataSyncServiceProvider);
+    if (dataState.status == SyncStatus.downloading ||
+        dataState.status == SyncStatus.paused ||
+        dataState.status == SyncStatus.checking) {
+      _isJsonSyncActive = true;
+      _itemStates[SyncItemType.json] = mapDataSyncStateToItemState(dataState);
+    }
     final downloadState = ref.read(imageDownloadManagerProvider);
     if (downloadState.status == DownloadStatus.downloading ||
         downloadState.status == DownloadStatus.paused) {
@@ -109,6 +119,12 @@ class _ModernDataSyncWidgetState extends ConsumerState<ModernDataSyncWidget> {
 
   /// 初始化时检查各项状态
   void _checkInitialStates() {
+    final dataState = ref.read(dataSyncServiceProvider);
+    if (dataState.status == SyncStatus.downloading ||
+        dataState.status == SyncStatus.paused ||
+        dataState.status == SyncStatus.checking) {
+      return;
+    }
     final downloadState = ref.read(imageDownloadManagerProvider);
     if (downloadState.status == DownloadStatus.downloading ||
         downloadState.status == DownloadStatus.paused) {
@@ -406,16 +422,6 @@ class _ModernDataSyncWidgetState extends ConsumerState<ModernDataSyncWidget> {
         );
 
       case SyncItemStatus.downloading:
-        if (type == SyncItemType.json) {
-          return const SizedBox(
-            width: 40,
-            height: 40,
-            child: Padding(
-              padding: EdgeInsets.all(10),
-              child: CircularProgressIndicator(strokeWidth: 2.5),
-            ),
-          );
-        }
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -953,7 +959,12 @@ class _ModernDataSyncWidgetState extends ConsumerState<ModernDataSyncWidget> {
             downloadDetailImages: false,
           ),
         );
+        if (!mounted) return;
         final syncState = ref.read(dataSyncServiceProvider);
+        if (syncState.status == SyncStatus.idle) {
+          _isJsonSyncActive = false;
+          return;
+        }
         if (syncState.status == SyncStatus.error) {
           throw StateError(syncState.error ?? '数据同步失败');
         }
@@ -1084,9 +1095,12 @@ class _ModernDataSyncWidgetState extends ConsumerState<ModernDataSyncWidget> {
     }
   }
 
-  void _handlePauseDownload(SyncItemType type) {
-    // 调用图片下载管理器的暂停方法
-    ref.read(imageDownloadManagerProvider.notifier).pauseDownload();
+  Future<void> _handlePauseDownload(SyncItemType type) async {
+    if (type == SyncItemType.json) {
+      await ref.read(dataSyncServiceProvider.notifier).pauseSync();
+    } else {
+      ref.read(imageDownloadManagerProvider.notifier).pauseDownload();
+    }
 
     setState(() {
       _itemStates[type] = _itemStates[type]!.copyWith(
@@ -1096,9 +1110,12 @@ class _ModernDataSyncWidgetState extends ConsumerState<ModernDataSyncWidget> {
     });
   }
 
-  void _handleResumeDownload(SyncItemType type) {
-    // 调用图片下载管理器的恢复方法
-    ref.read(imageDownloadManagerProvider.notifier).resumeDownload();
+  Future<void> _handleResumeDownload(SyncItemType type) async {
+    if (type == SyncItemType.json) {
+      await ref.read(dataSyncServiceProvider.notifier).resumeSync();
+    } else {
+      ref.read(imageDownloadManagerProvider.notifier).resumeDownload();
+    }
 
     setState(() {
       _itemStates[type] = _itemStates[type]!.copyWith(
@@ -1108,9 +1125,13 @@ class _ModernDataSyncWidgetState extends ConsumerState<ModernDataSyncWidget> {
     });
   }
 
-  void _handleCancelDownload(SyncItemType type) {
-    // 调用图片下载管理器的取消方法
-    ref.read(imageDownloadManagerProvider.notifier).cancelAllDownloads();
+  Future<void> _handleCancelDownload(SyncItemType type) async {
+    if (type == SyncItemType.json) {
+      await ref.read(dataSyncServiceProvider.notifier).cancelSync();
+      _isJsonSyncActive = false;
+    } else {
+      ref.read(imageDownloadManagerProvider.notifier).cancelAllDownloads();
+    }
 
     setState(() {
       _itemStates[type] = SyncItemState.initial(type);

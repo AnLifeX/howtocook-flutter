@@ -16,7 +16,7 @@ import '../domain/entities/manifest.dart';
 class BundledDataLoader {
   static const String _localDataDirName = 'recipe_data';
   static const String _remoteBaseUrl =
-      'https://gaq152.github.io/HowToCook-assets';
+      'https://anlifex.github.io/HowToCook-assets';
 
   _DataContext? _cachedContext;
 

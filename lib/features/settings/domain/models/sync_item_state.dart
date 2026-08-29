@@ -69,7 +69,7 @@ class SyncItemInfo {
     SyncItemInfo(
       type: SyncItemType.fullDetailImages,
       title: '离线详情图',
-      description: '可选下载；未下载时使用网络图片',
+      description: '可选下载；支持后台、暂停与继续',
       icon: Icons.file_download,
     ),
   ];

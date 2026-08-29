@@ -5,8 +5,8 @@
   <img alt="Dart" src="https://img.shields.io/badge/Dart-3.9%2B-0175C2?logo=dart&logoColor=white">
   <img alt="Riverpod" src="https://img.shields.io/badge/Riverpod-2.x-3BA5F4">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Android-5AA9E6">
-  <a href="https://github.com/Gaq152/howtocook-flutter/releases/latest">
-    <img alt="Latest Release" src="https://img.shields.io/github/v/release/Gaq152/howtocook-flutter?include_prereleases&sort=semver&color=brightgreen">
+  <a href="https://github.com/AnLifeX/howtocook-flutter/releases/latest">
+    <img alt="Latest Release" src="https://img.shields.io/github/v/release/AnLifeX/howtocook-flutter?include_prereleases&sort=semver&color=brightgreen">
   </a>
 </p>
 
