@@ -1,7 +1,7 @@
 name: howtocook
 description: "智能菜谱助手 - 基于 AI 的跨平台菜谱管理和推荐应用"
 publish_to: 'none'
-version: 0.4.8+21
+version: 0.4.9+22
 
 environment:
   sdk: ^3.9.2
