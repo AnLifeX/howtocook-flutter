@@ -8,6 +8,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
+import '../../../../core/services/android_background_execution_service.dart';
+import '../../../../core/services/app_notification_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_snack_bar.dart';
@@ -17,6 +19,7 @@ import '../../../sync/infrastructure/bundled_data_loader.dart';
 import '../../../recipe/domain/entities/recipe.dart';
 import '../../../recipe/application/providers/recipe_providers.dart';
 import '../../application/providers/ai_providers.dart';
+import '../../application/services/ai_chat_task_coordinator.dart';
 import '../../domain/entities/ai_model_config.dart';
 import '../../domain/entities/chat_message.dart';
 import '../../domain/entities/conversation.dart';
@@ -66,7 +69,8 @@ class AIChatScreen extends ConsumerStatefulWidget {
   ConsumerState<AIChatScreen> createState() => _AIChatScreenState();
 }
 
-class _AIChatScreenState extends ConsumerState<AIChatScreen> {
+class _AIChatScreenState extends ConsumerState<AIChatScreen>
+    with AutomaticKeepAliveClientMixin<AIChatScreen> {
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final List<ChatMessage> _messages = [];
@@ -100,10 +104,52 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
   bool _enableThinking = false;
   ConversationContextState _contextState = const ConversationContextState();
   bool _isCompressingContext = false;
+  String? _activeTaskConversationId;
+
+  final AIChatTaskCoordinator _taskCoordinator = AIChatTaskCoordinator.instance;
+  final AndroidBackgroundExecutionService _backgroundExecution =
+      AndroidBackgroundExecutionService.instance;
 
   static const double _contextWarningRatio = 0.70;
   static const double _contextCompressionRatio = 0.82;
   static const int _messagesKeptAfterCompression = 8;
+
+  @override
+  bool get wantKeepAlive => true;
+
+  void _taskSetState(VoidCallback mutation) {
+    if (mounted) {
+      setState(mutation);
+    } else {
+      mutation();
+    }
+    if (_activeTaskConversationId != null) {
+      final latestAssistantText = _messages.isEmpty
+          ? ''
+          : _messages.last.content
+                .whereType<TextContent>()
+                .map((item) => item.text)
+                .join();
+      _taskCoordinator.update(
+        statusText: _aiStatusText,
+        partialText: _streamingText.isNotEmpty
+            ? _streamingText
+            : latestAssistantText,
+      );
+    }
+  }
+
+  bool _blockConversationMutationWhileRunning() {
+    if (!_taskCoordinator.isRunning) return false;
+    if (mounted) {
+      AppSnackBar.show(
+        context,
+        '当前回复和工具调用尚未完成，完成或终止后再切换会话',
+        bottomOffset: AppSnackBar.kChatBottomOffset,
+      );
+    }
+    return true;
+  }
 
   String get _currentConversationTitle {
     final activeId = _currentConversationId;
@@ -308,7 +354,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
   @override
   void dispose() {
     _partialSaveTimer?.cancel();
-    _saveChatHistory();
+    _saveChatHistory(conversationId: _activeTaskConversationId);
     _inputController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -408,8 +454,9 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
   }
 
   /// 保存当前会话的消息和食谱
-  Future<void> _saveChatHistory() async {
-    final convId = _currentConversationId;
+  Future<void> _saveChatHistory({String? conversationId}) async {
+    final convId =
+        conversationId ?? _activeTaskConversationId ?? _currentConversationId;
     if (convId == null) return;
     try {
       final jsonString = jsonEncode(_messages.map((m) => m.toJson()).toList());
@@ -420,10 +467,10 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
       await _conversationRepo.saveContextState(convId, _contextState);
 
       // 更新会话元数据
-      await _updateConversationMeta();
+      await _updateConversationMeta(conversationId: convId);
 
       // 保存 AI 创建的食谱
-      await _saveCreatedRecipes();
+      await _saveCreatedRecipes(conversationId: convId);
     } catch (e, stackTrace) {
       debugPrint('Failed to save chat history: $e');
       debugPrint('Stack trace: $stackTrace');
@@ -431,8 +478,8 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
   }
 
   /// 更新当前会话的元数据（标题、最后消息、消息数）
-  Future<void> _updateConversationMeta() async {
-    final convId = _currentConversationId;
+  Future<void> _updateConversationMeta({String? conversationId}) async {
+    final convId = conversationId ?? _currentConversationId;
     if (convId == null) return;
     final conv = await _conversationRepo.getById(convId);
     if (conv == null) return;
@@ -483,8 +530,9 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
   }
 
   /// 保存 AI 创建的食谱（独立方法，可在创建时立即调用）
-  Future<void> _saveCreatedRecipes() async {
-    final convId = _currentConversationId;
+  Future<void> _saveCreatedRecipes({String? conversationId}) async {
+    final convId =
+        conversationId ?? _activeTaskConversationId ?? _currentConversationId;
     if (convId == null) return;
     try {
       final recipesJson = _createdRecipes.values
@@ -711,7 +759,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
           .where((text) => text.isNotEmpty)
           .join('\n');
       if (summary.isNotEmpty) {
-        setState(() {
+        _taskSetState(() {
           _contextState = _contextState.copyWith(
             summary: summary,
             summarizedMessageCount: cutIndex,
@@ -747,6 +795,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return Scaffold(
       key: _scaffoldKey,
       resizeToAvoidBottomInset: false,
@@ -802,14 +851,16 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
           IconButton(
             icon: const Icon(Icons.delete_outline),
             tooltip: '清空聊天记录',
-            onPressed: _clearHistory,
+            onPressed: _taskCoordinator.isRunning ? null : _clearHistory,
             visualDensity: VisualDensity.compact,
             constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
           ),
           IconButton(
             icon: const Icon(Icons.add),
             tooltip: '新建会话',
-            onPressed: _createNewConversation,
+            onPressed: _taskCoordinator.isRunning
+                ? null
+                : _createNewConversation,
             visualDensity: VisualDensity.compact,
             constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
           ),
@@ -1797,6 +1848,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
 
   /// 发送消息
   Future<void> _sendMessage() async {
+    if (_taskCoordinator.isRunning) return;
     final content = _inputController.text.trim();
     if (content.isEmpty && _selectedImagePath == null) return;
     if (_resolveActiveModel() == null) {
@@ -1844,7 +1896,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
 
   /// 重新发送消息（用于重试）
   Future<void> _resendMessage(ChatMessage userMessage) async {
-    if (_isLoading) return; // 如果正在加载，不允许重新发送
+    if (_isLoading || _taskCoordinator.isRunning) return;
 
     setState(() {
       _isLoading = true;
@@ -1858,6 +1910,25 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
 
   /// 实际的消息发送逻辑（供 _sendMessage 和 _resendMessage 调用）
   Future<void> _sendMessageInternal() async {
+    final taskConversationId = _currentConversationId;
+    if (taskConversationId == null) {
+      _taskSetState(() {
+        _isLoading = false;
+        _aiStatusText = null;
+      });
+      return;
+    }
+    if (!_taskCoordinator.begin(taskConversationId)) {
+      _taskSetState(() {
+        _isLoading = false;
+        _aiStatusText = null;
+      });
+      return;
+    }
+    _activeTaskConversationId = taskConversationId;
+    final backgroundLeaseAcquired = await _backgroundExecution.acquire();
+    var taskFailed = false;
+
     final tempAssistantMessage = ChatMessage(
       id: DateTime.now().toString(),
       role: MessageRole.assistant,
@@ -1865,10 +1936,11 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
       timestamp: DateTime.now(),
     );
 
-    setState(() {
+    _taskSetState(() {
       _messages.add(tempAssistantMessage);
       _streamingText = '';
       _streamingReasoningText = '';
+      _shouldStopStreaming = false;
     });
 
     _scrollToBottom();
@@ -2006,19 +2078,17 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
         // 跨轮次累积思考内容
         final accumulatedReasoning = StringBuffer();
 
-        setState(() {
+        _taskSetState(() {
           _streamingReasoningText = '';
         });
 
-        while (toolCallCount < maxToolCalls) {
+        while (toolCallCount < maxToolCalls && !_shouldStopStreaming) {
           toolCallCount++;
           debugPrint('Tool call iteration $toolCallCount');
 
-          if (mounted) {
-            setState(() {
-              _aiStatusText = toolCallCount == 1 ? '分析并选择工具中...' : '整理工具结果中...';
-            });
-          }
+          _taskSetState(() {
+            _aiStatusText = toolCallCount == 1 ? '分析并选择工具中...' : '整理工具结果中...';
+          });
 
           final streamingTextBuffer = StringBuffer();
 
@@ -2031,40 +2101,39 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
             },
             onTextChunk: (chunk) {
               streamingTextBuffer.write(chunk);
-              if (mounted) {
-                scheduleMicrotask(() {
-                  if (mounted) {
-                    setState(() {
-                      _aiStatusText = null;
-                      final lastIndex = _messages.length - 1;
-                      final display = accumulatedText.isEmpty
-                          ? streamingTextBuffer.toString()
-                          : '${accumulatedText.toString()}\n\n${streamingTextBuffer.toString()}';
-                      _messages[lastIndex] = ChatMessage(
-                        id: tempAssistantMessage.id,
-                        role: MessageRole.assistant,
-                        content: [MessageContent.text(text: display)],
-                        timestamp: tempAssistantMessage.timestamp,
-                        modelId: currentModel.id,
-                      );
-                      _schedulePartialSave();
-                    });
-                  }
+              scheduleMicrotask(() {
+                _taskSetState(() {
+                  _aiStatusText = null;
+                  final lastIndex = _messages.length - 1;
+                  final display = accumulatedText.isEmpty
+                      ? streamingTextBuffer.toString()
+                      : '${accumulatedText.toString()}\n\n${streamingTextBuffer.toString()}';
+                  _messages[lastIndex] = ChatMessage(
+                    id: tempAssistantMessage.id,
+                    role: MessageRole.assistant,
+                    content: [MessageContent.text(text: display)],
+                    timestamp: tempAssistantMessage.timestamp,
+                    modelId: currentModel.id,
+                  );
+                  _schedulePartialSave();
                 });
-              }
+              });
             },
             onReasoningContent: (value) {
-              if (mounted) {
-                setState(() {
-                  _aiStatusText = '思考中...';
-                  _streamingReasoningText = accumulatedReasoning.isEmpty
-                      ? value
-                      : '${accumulatedReasoning.toString()}\n\n$value';
-                });
-              }
+              _taskSetState(() {
+                _aiStatusText = '思考中...';
+                _streamingReasoningText = accumulatedReasoning.isEmpty
+                    ? value
+                    : '${accumulatedReasoning.toString()}\n\n$value';
+              });
             },
           );
           _recordUsage(requestUsage);
+
+          // A synchronous tool-planning request cannot be interrupted at the
+          // socket level, but its late result must not restart a task the user
+          // already stopped.
+          if (_shouldStopStreaming) break;
 
           debugPrint(
             '📨 Got response with ${response.content.length} content items',
@@ -2101,7 +2170,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
                 ...response.content.where((c) => c is! TextContent),
               ];
             }
-            setState(() {
+            _taskSetState(() {
               final lastIndex = _messages.length - 1;
               _messages[lastIndex] = ChatMessage(
                 id: tempAssistantMessage.id,
@@ -2145,7 +2214,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
           for (final content in response.content) {
             if (content is ToolUseContent) {
               debugPrint('Executing tool: ${content.name}');
-              setState(() {
+              _taskSetState(() {
                 _aiStatusText = _toolStatusText(content.name);
               });
 
@@ -2207,7 +2276,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
 
         if (toolCallCount >= maxToolCalls) {
           debugPrint('WARNING: Reached max tool call iterations');
-          setState(() {
+          _taskSetState(() {
             final lastIndex = _messages.length - 1;
             _messages[lastIndex] = ChatMessage(
               id: tempAssistantMessage.id,
@@ -2233,11 +2302,10 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
           // 使用流式响应
           debugPrint('Using streaming response (streaming enabled)');
 
-          setState(() {
+          _taskSetState(() {
             _isStreaming = true;
             _streamingText = '';
             _streamingReasoningText = '';
-            _shouldStopStreaming = false;
           });
 
           String? reasoningContent;
@@ -2249,7 +2317,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
             },
             onReasoningContent: (value) {
               reasoningContent = value;
-              setState(() {
+              _taskSetState(() {
                 _aiStatusText = '思考中...';
                 _streamingReasoningText = value;
               });
@@ -2270,7 +2338,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
             chunkCount++;
             responseBuffer.write(chunk);
 
-            setState(() {
+            _taskSetState(() {
               _aiStatusText = null;
               _streamingText = responseBuffer.toString();
             });
@@ -2292,7 +2360,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
             );
 
             // 关闭流式状态，但保持加载状态
-            setState(() {
+            _taskSetState(() {
               _isStreaming = false;
             });
 
@@ -2307,7 +2375,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
               final toolArgs = toolCall['arguments'] as Map<String, dynamic>;
 
               debugPrint('🔧 Executing XML tool: $toolName (id: $toolUseId)');
-              setState(() {
+              _taskSetState(() {
                 _aiStatusText = _toolStatusText(toolName);
               });
               try {
@@ -2365,7 +2433,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
             final nextResponseBuffer = StringBuffer();
             String? nextReasoningContent;
 
-            setState(() {
+            _taskSetState(() {
               _isStreaming = true;
               _aiStatusText = '回复中...';
               _streamingText = cleanResponseText.isNotEmpty
@@ -2382,7 +2450,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
               },
               onReasoningContent: (value) {
                 nextReasoningContent = value;
-                setState(() {
+                _taskSetState(() {
                   _aiStatusText = '思考中...';
                   _streamingReasoningText = value;
                 });
@@ -2392,7 +2460,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
             await for (final chunk in nextStream) {
               if (_shouldStopStreaming) break;
               nextResponseBuffer.write(chunk);
-              setState(() {
+              _taskSetState(() {
                 _aiStatusText = null;
                 _streamingText = cleanResponseText.isNotEmpty
                     ? '$cleanResponseText\n\n${nextResponseBuffer.toString()}'
@@ -2406,7 +2474,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
                 ? '$cleanResponseText\n\n${nextResponseBuffer.toString()}'
                 : nextResponseBuffer.toString();
 
-            setState(() {
+            _taskSetState(() {
               _isStreaming = false;
               _isLoading = false;
               _aiStatusText = null;
@@ -2425,7 +2493,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
             });
           } else {
             // 没有工具调用，直接显示响应
-            setState(() {
+            _taskSetState(() {
               _isStreaming = false;
               _isLoading = false;
               _aiStatusText = null;
@@ -2456,8 +2524,10 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
           );
           _recordUsage(requestUsage);
 
+          if (_shouldStopStreaming) return;
+
           // 更新最终消息（使用响应中的reasoning内容）
-          setState(() {
+          _taskSetState(() {
             _isLoading = false;
             _aiStatusText = null;
             final lastIndex = _messages.length - 1;
@@ -2474,13 +2544,14 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
       }
 
       // 保存聊天历史
-      _saveChatHistory();
+      await _saveChatHistory(conversationId: taskConversationId);
       _scrollToBottom();
     } catch (e, stackTrace) {
+      taskFailed = true;
       debugPrint('Error sending message: $e');
       debugPrint('Stack trace: $stackTrace');
 
-      setState(() {
+      _taskSetState(() {
         var partialText = _streamingText;
         String? partialReasoning = _streamingReasoningText.isEmpty
             ? null
@@ -2521,7 +2592,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
       });
 
       // 保存错误消息
-      _saveChatHistory();
+      await _saveChatHistory(conversationId: taskConversationId);
 
       if (mounted) {
         AppSnackBar.show(
@@ -2530,6 +2601,51 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
           bottomOffset: AppSnackBar.kChatBottomOffset,
         );
       }
+    } finally {
+      if (_shouldStopStreaming) {
+        _taskSetState(() {
+          _isLoading = false;
+          _isStreaming = false;
+          _aiStatusText = null;
+          if (_messages.isNotEmpty &&
+              _messages.last.id == tempAssistantMessage.id) {
+            final partialText = _messages.last.content
+                .whereType<TextContent>()
+                .map((item) => item.text)
+                .join()
+                .trim();
+            if (partialText.isEmpty) {
+              _messages[_messages.length - 1] = ChatMessage(
+                id: tempAssistantMessage.id,
+                role: MessageRole.assistant,
+                content: [MessageContent.text(text: '（已停止生成）')],
+                timestamp: tempAssistantMessage.timestamp,
+                modelId: requestModelId,
+              );
+            }
+          }
+        });
+      }
+      await _saveChatHistory(conversationId: taskConversationId);
+      if (backgroundLeaseAcquired) {
+        await _backgroundExecution.release();
+      }
+      final lifecycleState = WidgetsBinding.instance.lifecycleState;
+      if (!_shouldStopStreaming &&
+          lifecycleState != null &&
+          lifecycleState != AppLifecycleState.resumed) {
+        try {
+          await AppNotificationService.instance.showAIChatResult(
+            succeeded: !taskFailed,
+          );
+        } catch (error, stackTrace) {
+          debugPrint('Unable to show AI completion notification: $error');
+          debugPrint('$stackTrace');
+        }
+      }
+      _activeTaskConversationId = null;
+      _taskCoordinator.finish();
+      if (mounted) setState(() {});
     }
   }
 
@@ -2862,8 +2978,8 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
               final recipe = Recipe.fromJson(
                 sanitizedData,
               ).copyWith(source: RecipeSource.aiGenerated);
-              setState(() => _createdRecipes[recipe.id] = recipe);
-              _saveCreatedRecipes();
+              _taskSetState(() => _createdRecipes[recipe.id] = recipe);
+              _saveCreatedRecipes(conversationId: _activeTaskConversationId);
               result = {
                 ...createResult,
                 'success': true,
@@ -2911,7 +3027,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
         duration: duration,
       );
 
-      setState(() {
+      _taskSetState(() {
         _mcpCallHistory.add(toolCall);
         // 只保留最近 50 条记录
         if (_mcpCallHistory.length > 50) {
@@ -3047,8 +3163,9 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
 
   /// 滚动到底部
   void _scrollToBottom() {
+    if (!mounted) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
+      if (mounted && _scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
           duration: const Duration(milliseconds: 300),
@@ -3060,10 +3177,10 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
 
   /// 终止流式输出
   void _stopStreaming() {
-    setState(() {
+    _taskCoordinator.requestStop();
+    _taskSetState(() {
       _shouldStopStreaming = true;
-      _isLoading = false;
-      _aiStatusText = null;
+      _aiStatusText = '正在停止...';
       _isStreaming = false;
     });
     debugPrint('User stopped streaming');
@@ -3223,6 +3340,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
 
   /// 新建会话
   Future<void> _createNewConversation() async {
+    if (_blockConversationMutationWhileRunning()) return;
     // 当前会话为空时，不重复创建
     if (_messages.isEmpty &&
         _conversations.any((item) => item.id == _currentConversationId)) {
@@ -3249,6 +3367,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
 
   /// 切换会话
   Future<void> _switchConversation(String conversationId) async {
+    if (_blockConversationMutationWhileRunning()) return;
     if (conversationId == _currentConversationId) return;
 
     // 保存当前会话
@@ -3271,6 +3390,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
 
   /// 删除会话
   Future<void> _deleteConversation(String conversationId) async {
+    if (_blockConversationMutationWhileRunning()) return;
     await _conversationRepo.delete(conversationId);
     _conversations = await _conversationRepo.getAll();
 

@@ -25,7 +25,9 @@ class AppNotificationService {
     }
     _onTap = onTap;
 
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings = AndroidInitializationSettings(
+      '@mipmap/ic_launcher',
+    );
     const initSettings = InitializationSettings(android: androidSettings);
 
     await _plugin.initialize(
@@ -138,7 +140,10 @@ class AppNotificationService {
     );
   }
 
-  Future<void> showDownloadComplete({required int total, int failed = 0}) async {
+  Future<void> showDownloadComplete({
+    required int total,
+    int failed = 0,
+  }) async {
     final androidDetails = AndroidNotificationDetails(
       _downloadChannelId,
       _downloadChannelName,
@@ -148,9 +153,7 @@ class AppNotificationService {
       autoCancel: true,
     );
 
-    final body = failed > 0
-        ? '$total 张图片已下载，$failed 张失败'
-        : '全部 $total 张图片已下载';
+    final body = failed > 0 ? '$total 张图片已下载，$failed 张失败' : '全部 $total 张图片已下载';
 
     await _plugin.show(
       id: _downloadNotifId,
@@ -163,5 +166,28 @@ class AppNotificationService {
 
   Future<void> cancelDownloadNotification() async {
     await _plugin.cancel(id: _downloadNotifId);
+  }
+
+  static const _aiChatChannelId = 'ai_chat_results';
+  static const _aiChatChannelName = '小厨回复提醒';
+  static const _aiChatNotificationId = 1004;
+
+  Future<void> showAIChatResult({required bool succeeded}) async {
+    if (!Platform.isAndroid) return;
+    const androidDetails = AndroidNotificationDetails(
+      _aiChatChannelId,
+      _aiChatChannelName,
+      channelDescription: '小厨在后台完成回复或工具调用后的提醒',
+      importance: Importance.defaultImportance,
+      priority: Priority.defaultPriority,
+      autoCancel: true,
+    );
+    await _plugin.show(
+      id: _aiChatNotificationId,
+      title: succeeded ? '小厨已完成回复' : '小厨回复中断',
+      body: succeeded ? '点击返回会话查看完整结果' : '点击返回会话查看已保留的内容和错误信息',
+      notificationDetails: const NotificationDetails(android: androidDetails),
+      payload: 'ai-chat',
+    );
   }
 }

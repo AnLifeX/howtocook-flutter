@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/ai_chat/application/services/ai_chat_task_coordinator.dart';
 import '../theme/app_colors.dart';
 
 /// 悬浮导航栏的总高度（胶囊 56 + 上边距 8 + 下边距 12 = 76），
@@ -95,54 +96,87 @@ class MainScaffold extends StatelessWidget {
   }
 
   Widget _buildAiNavItem() {
-    final isSelected = navigationShell.currentIndex == 1;
-
     return Expanded(
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => _onItemTapped(1),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: isSelected
-                      ? [AppColors.primary, AppColors.plum]
-                      : [AppColors.textDisabled, AppColors.textDisabled],
-                ),
-                boxShadow: isSelected
-                    ? [
-                        BoxShadow(
-                          color: AppColors.primary.withValues(alpha: 0.3),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
+      child: AnimatedBuilder(
+        animation: AIChatTaskCoordinator.instance,
+        builder: (context, _) {
+          final isSelected = navigationShell.currentIndex == 1;
+          final isRunning = AIChatTaskCoordinator.instance.isRunning;
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _onItemTapped(1),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: isSelected || isRunning
+                              ? [AppColors.primary, AppColors.plum]
+                              : [
+                                  AppColors.textDisabled,
+                                  AppColors.textDisabled,
+                                ],
                         ),
-                      ]
-                    : null,
-              ),
-              child: const Icon(
-                Icons.auto_awesome,
-                size: 18,
-                color: AppColors.surface,
-              ),
+                        boxShadow: isSelected || isRunning
+                            ? [
+                                BoxShadow(
+                                  color: AppColors.primary.withValues(
+                                    alpha: 0.3,
+                                  ),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: const Icon(
+                        Icons.auto_awesome,
+                        size: 18,
+                        color: AppColors.surface,
+                      ),
+                    ),
+                    if (isRunning)
+                      const Positioned(
+                        right: -3,
+                        top: -3,
+                        child: SizedBox(
+                          width: 10,
+                          height: 10,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.primary,
+                            backgroundColor: AppColors.surface,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  isRunning ? '回复中' : '小厨',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: isSelected || isRunning
+                        ? FontWeight.w600
+                        : FontWeight.w500,
+                    color: isSelected || isRunning
+                        ? AppColors.primary
+                        : AppColors.textDisabled,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 2),
-            Text(
-              '小厨',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                color: isSelected ? AppColors.primary : AppColors.textDisabled,
-              ),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }

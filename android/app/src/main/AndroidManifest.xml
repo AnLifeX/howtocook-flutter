@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- 网络（Flutter 默认会注入，这里显式声明便于检查） -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- 应用内下载 APK 调起系统安装器（Android 8.0+ 需显式声明） -->
@@ -9,11 +10,21 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!-- flutter_background supports this optional exemption, but chat does not
+         request it; keep the distributed APK free of that sensitive permission. -->
+    <uses-permission
+        android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
+        tools:node="remove" />
 
     <application
         android:label="智能菜谱助手"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <!-- AI 回复期间保活当前 Flutter isolate；任务结束后立即停止。 -->
+        <service
+            android:name="de.julianassmann.flutter_background.IsolateHolderService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

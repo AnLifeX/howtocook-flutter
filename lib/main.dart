@@ -101,6 +101,9 @@ class _HowToCookAppState extends ConsumerState<HowToCookApp> {
     if (payload == 'data-sync') {
       final router = ref.read(routerProvider);
       router.push('/data-sync');
+    } else if (payload == 'ai-chat') {
+      final router = ref.read(routerProvider);
+      router.go('/ai-chat');
     }
   }
 
