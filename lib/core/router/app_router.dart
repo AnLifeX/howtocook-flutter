@@ -31,37 +31,46 @@ final routerProvider = Provider<GoRouter>((ref) {
     initialLocation: '/recipes',
     routes: [
       // Shell 路由：包含底部导航的主框架
-      ShellRoute(
-        builder: (context, state, child) {
-          return MainScaffold(child: child);
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) {
+          return MainScaffold(navigationShell: navigationShell);
         },
-        routes: [
-          // 菜谱首页
-          GoRoute(
-            path: '/recipes',
-            name: 'recipes',
-            pageBuilder: (context, state) => NoTransitionPage(
-              key: state.pageKey,
-              child: const RecipeHomeScreen(),
-            ),
+        branches: [
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/recipes',
+                name: 'recipes',
+                pageBuilder: (context, state) => NoTransitionPage(
+                  key: state.pageKey,
+                  child: const RecipeHomeScreen(),
+                ),
+              ),
+            ],
           ),
-
-          // AI 聊天页面
-          GoRoute(
-            path: '/ai-chat',
-            name: 'ai-chat',
-            pageBuilder: (context, state) => NoTransitionPage(
-              key: state.pageKey,
-              child: const AIChatScreen(),
-            ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/ai-chat',
+                name: 'ai-chat',
+                pageBuilder: (context, state) => NoTransitionPage(
+                  key: state.pageKey,
+                  child: const AIChatScreen(),
+                ),
+              ),
+            ],
           ),
-
-          // 用户页面
-          GoRoute(
-            path: '/user',
-            name: 'user',
-            pageBuilder: (context, state) =>
-                NoTransitionPage(key: state.pageKey, child: const UserScreen()),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/user',
+                name: 'user',
+                pageBuilder: (context, state) => NoTransitionPage(
+                  key: state.pageKey,
+                  child: const UserScreen(),
+                ),
+              ),
+            ],
           ),
         ],
       ),

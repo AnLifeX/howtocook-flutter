@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../theme/app_colors.dart';
@@ -8,58 +7,26 @@ import '../theme/app_colors.dart';
 /// 子页面可通过此常量在底部留出空间。
 const kFloatingNavBarHeight = 76.0;
 
-class MainScaffold extends ConsumerStatefulWidget {
-  final Widget child;
+class MainScaffold extends StatelessWidget {
+  final StatefulNavigationShell navigationShell;
 
-  const MainScaffold({
-    super.key,
-    required this.child,
-  });
-
-  @override
-  ConsumerState<MainScaffold> createState() => _MainScaffoldState();
-}
-
-class _MainScaffoldState extends ConsumerState<MainScaffold> {
-  int _currentIndex = 0;
-
-  int _calculateSelectedIndex(BuildContext context) {
-    final String location = GoRouterState.of(context).uri.path;
-
-    if (location.startsWith('/recipes')) {
-      return 0;
-    } else if (location.startsWith('/ai-chat')) {
-      return 1;
-    } else if (location.startsWith('/user')) {
-      return 2;
-    }
-
-    return 0;
-  }
+  const MainScaffold({super.key, required this.navigationShell});
 
   void _onItemTapped(int index) {
-    switch (index) {
-      case 0:
-        context.go('/recipes');
-        break;
-      case 1:
-        context.go('/ai-chat');
-        break;
-      case 2:
-        context.go('/user');
-        break;
-    }
+    navigationShell.goBranch(
+      index,
+      initialLocation: index == navigationShell.currentIndex,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    _currentIndex = _calculateSelectedIndex(context);
     final bottomPadding = MediaQuery.of(context).padding.bottom;
 
     return Scaffold(
       extendBody: true,
       resizeToAvoidBottomInset: false,
-      body: widget.child,
+      body: navigationShell,
       bottomNavigationBar: Container(
         color: Colors.transparent,
         padding: EdgeInsets.only(
@@ -83,17 +50,9 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
           ),
           child: Row(
             children: [
-              _buildNavItem(
-                index: 0,
-                icon: Icons.restaurant_menu,
-                label: '菜谱',
-              ),
+              _buildNavItem(index: 0, icon: Icons.restaurant_menu, label: '菜谱'),
               _buildAiNavItem(),
-              _buildNavItem(
-                index: 2,
-                icon: Icons.person_outline,
-                label: '我的',
-              ),
+              _buildNavItem(index: 2, icon: Icons.person_outline, label: '我的'),
             ],
           ),
         ),
@@ -106,7 +65,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
     required IconData icon,
     required String label,
   }) {
-    final isSelected = _currentIndex == index;
+    final isSelected = navigationShell.currentIndex == index;
 
     return Expanded(
       child: GestureDetector(
@@ -118,9 +77,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
             Icon(
               icon,
               size: 22,
-              color: isSelected
-                  ? AppColors.primary
-                  : AppColors.textDisabled,
+              color: isSelected ? AppColors.primary : AppColors.textDisabled,
             ),
             const SizedBox(height: 2),
             Text(
@@ -128,9 +85,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                color: isSelected
-                    ? AppColors.primary
-                    : AppColors.textDisabled,
+                color: isSelected ? AppColors.primary : AppColors.textDisabled,
               ),
             ),
           ],
@@ -140,7 +95,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
   }
 
   Widget _buildAiNavItem() {
-    final isSelected = _currentIndex == 1;
+    final isSelected = navigationShell.currentIndex == 1;
 
     return Expanded(
       child: GestureDetector(
@@ -183,9 +138,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                color: isSelected
-                    ? AppColors.primary
-                    : AppColors.textDisabled,
+                color: isSelected ? AppColors.primary : AppColors.textDisabled,
               ),
             ),
           ],

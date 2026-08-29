@@ -82,6 +82,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
   String? _aiStatusText;
   bool _shouldStopStreaming = false;
   String? _selectedImagePath;
+  Timer? _partialSaveTimer;
   List<Map<String, dynamic>> _mcpTools = const [];
   // 新创建的食谱（用于在聊天中显示卡片和跳转到预览页面）
   final Map<String, Recipe> _createdRecipes = {};
@@ -117,6 +118,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
 涉及菜谱库、具体食谱、推荐或创建食谱时优先使用合适的工具；普通烹饪常识可直接回答。
 工具结果要整理成自然语言，不输出原始 JSON；可补充实用技巧和风险提示。
 搜索食谱时先用 searchRecipes 获取原始 ID，需要完整做法时再将原 ID 传给 getRecipeById，不得改写。
+搜索结果若 truncated=true 仅代表返回了部分匹配项，不得据此断言某菜谱不存在。首次搜索为零时，先用精简菜名、常见别名或主要食材再搜索一次；仍无结果时只能说明“当前查询未找到”。
 创建成功后在回复中提及食谱名称，客户端会显示可预览和保存的卡片。
 结合消息末尾提供的当前时间判断季节、餐次和时令。''';
   }
@@ -294,6 +296,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
 
   @override
   void dispose() {
+    _partialSaveTimer?.cancel();
     _saveChatHistory();
     _inputController.dispose();
     _scrollController.dispose();
@@ -582,9 +585,16 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
     return tokens;
   }
 
+  int _effectiveContextTokens(AIModelConfig model) {
+    final localEstimate = _estimatedContextTokens(model);
+    final providerEstimate =
+        _contextState.lastInputTokens + _contextState.lastOutputTokens;
+    return localEstimate >= providerEstimate ? localEstimate : providerEstimate;
+  }
+
   double _contextRatioForModel(AIModelConfig model) {
     if (model.capabilities.contextWindow <= 0) return 0;
-    return _estimatedContextTokens(model) / model.capabilities.contextWindow;
+    return _effectiveContextTokens(model) / model.capabilities.contextWindow;
   }
 
   Future<bool> _confirmLongContextIfNeeded() async {
@@ -932,11 +942,39 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
         return PopupMenuButton<String>(
           tooltip: '切换模型（${currentModel.displayName}）',
           initialValue: currentValue,
-          icon: const Icon(Icons.model_training_outlined),
           onSelected: (modelId) {
             final nextModel = models.firstWhere((model) => model.id == modelId);
-            ref.read(selectedModelConfigProvider.notifier).state = nextModel;
+            setState(() {
+              ref.read(selectedModelConfigProvider.notifier).state = nextModel;
+              if (!nextModel.supportsImageInputEffective) {
+                _selectedImagePath = null;
+              }
+            });
           },
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 180),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      currentModel.displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                  const Icon(Icons.arrow_drop_down, size: 20),
+                ],
+              ),
+            ),
+          ),
           itemBuilder: (context) => models
               .map(
                 (model) => PopupMenuItem<String>(
@@ -971,10 +1009,10 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
       return const IconButton(
         tooltip: '暂无上下文数据',
         onPressed: null,
-        icon: Icon(Icons.data_usage_outlined),
+        icon: Icon(Icons.memory_outlined),
       );
     }
-    final estimated = _estimatedContextTokens(model);
+    final estimated = _effectiveContextTokens(model);
     final window = model.capabilities.contextWindow;
     final ratio = window <= 0 ? 0.0 : estimated / window;
     final warning = ratio >= _contextWarningRatio;
@@ -986,7 +1024,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
           '${cacheRate == null ? '' : ' · 缓存 ${(cacheRate * 100).round()}%'}',
       onPressed: () => _showContextDetails(model),
       icon: Icon(
-        warning ? Icons.warning_amber_rounded : Icons.data_usage_outlined,
+        warning ? Icons.warning_amber_rounded : Icons.memory_outlined,
         color: warning ? AppColors.warning : AppColors.textSecondary,
       ),
     );
@@ -1003,7 +1041,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
   }
 
   void _showContextDetails(AIModelConfig model) {
-    final estimated = _estimatedContextTokens(model);
+    final estimated = _effectiveContextTokens(model);
     final window = model.capabilities.contextWindow;
     final percent = window <= 0 ? 0 : (estimated / window * 100).round();
     final cacheRate = _contextState.cacheHitRate;
@@ -1019,6 +1057,26 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
             children: [
               Text('会话上下文', style: AppTextStyles.cardTitle),
               const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '当前上下文窗口占用',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    '$percent%',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
               LinearProgressIndicator(
                 value: (estimated / window).clamp(0, 1).toDouble(),
                 minHeight: 8,
@@ -1026,7 +1084,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
               ),
               const SizedBox(height: 10),
               Text(
-                '预计占用 ${_formatTokenCount(estimated)} / ${_formatTokenCount(window)}（$percent%）',
+                '预计 ${_formatTokenCount(estimated)} / ${_formatTokenCount(window)} tokens',
               ),
               const SizedBox(height: 8),
               Text(
@@ -1039,7 +1097,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
               Text(
                 cacheRate == null
                     ? '缓存命中：暂无数据（部分中转服务不会返回）'
-                    : '累计缓存命中 ${(cacheRate * 100).toStringAsFixed(1)}% · 命中 ${_formatTokenCount(_contextState.totalCacheReadTokens)} · 未命中 ${_formatTokenCount(_contextState.totalCacheMissTokens)} tokens',
+                    : '本会话累计 API 输入：缓存命中 ${(cacheRate * 100).toStringAsFixed(1)}% · 命中 ${_formatTokenCount(_contextState.totalCacheReadTokens)} · 未命中 ${_formatTokenCount(_contextState.totalCacheMissTokens)} tokens',
                 style: AppTextStyles.bodySmall,
               ),
               if (_contextState.hasSummary) ...[
@@ -1049,13 +1107,6 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
                   style: AppTextStyles.bodySmall,
                 ),
               ],
-              const SizedBox(height: 12),
-              Text(
-                '占用量为客户端估算；上次请求数据来自模型服务商。达到 70% 会提醒，用户确认继续后达到 82% 自动压缩。',
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.textSecondary,
-                ),
-              ),
             ],
           ),
         ),
@@ -1381,6 +1432,8 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
   Widget _buildInputArea() {
     final hasKeyboard = MediaQuery.of(context).viewInsets.bottom > 0;
     final double extraBottom = hasKeyboard ? 8.0 : 16.0 + kFloatingNavBarHeight;
+    final selectedModel = ref.watch(selectedModelConfigProvider);
+    final supportsImages = selectedModel?.supportsImageInputEffective == true;
 
     return Container(
       padding: EdgeInsets.fromLTRB(16, 16, 16, extraBottom),
@@ -1400,23 +1453,37 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
           // 工具栏
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Row(
-              children: [
-                ActionChip(
-                  avatar: const Icon(
-                    Icons.add_photo_alternate_outlined,
-                    size: 16,
-                  ),
-                  label: const Text('图片'),
-                  tooltip: '拍照或从相册选择',
-                  onPressed: _isLoading ? null : _showImageSourcePicker,
-                  visualDensity: VisualDensity.compact,
-                ),
-                const SizedBox(width: 8),
-                _buildThinkingToggle(),
-                const SizedBox(width: 8),
-                _buildDataModeSelector(),
-              ],
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  if (supportsImages) ...[
+                    ActionChip(
+                      avatar: const Icon(
+                        Icons.add_photo_alternate_outlined,
+                        size: 16,
+                        color: AppColors.primaryDark,
+                      ),
+                      label: const Text('图片'),
+                      labelStyle: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.primaryDark,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      backgroundColor: AppColors.primaryLight,
+                      side: BorderSide(
+                        color: AppColors.primary.withValues(alpha: 0.35),
+                      ),
+                      tooltip: '拍照或从相册选择',
+                      onPressed: _isLoading ? null : _showImageSourcePicker,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  _buildThinkingToggle(),
+                  const SizedBox(width: 8),
+                  _buildDataModeSelector(),
+                ],
+              ),
             ),
           ),
 
@@ -1645,10 +1712,13 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
 
     setState(() {
       _messages.add(tempAssistantMessage);
+      _streamingText = '';
+      _streamingReasoningText = '';
     });
 
     _scrollToBottom();
 
+    String? requestModelId;
     try {
       // 获取当前有效的模型，应用聊天页的 thinking 开关覆盖
       final baseModel = _resolveActiveModel();
@@ -1660,6 +1730,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
           enableThinking: _enableThinking,
         ),
       );
+      requestModelId = currentModel.id;
       final aiService = AIServiceFactory.create(currentModel);
 
       await _compressContextIfNeeded(currentModel);
@@ -1821,6 +1892,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
                         timestamp: tempAssistantMessage.timestamp,
                         modelId: currentModel.id,
                       );
+                      _schedulePartialSave();
                     });
                   }
                 });
@@ -2047,6 +2119,7 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
               _aiStatusText = null;
               _streamingText = responseBuffer.toString();
             });
+            _schedulePartialSave();
           }
           _recordUsage(requestUsage);
 
@@ -2253,22 +2326,41 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
       debugPrint('Stack trace: $stackTrace');
 
       setState(() {
+        var partialText = _streamingText;
+        String? partialReasoning = _streamingReasoningText.isEmpty
+            ? null
+            : _streamingReasoningText;
         // 重置流式状态
         _isStreaming = false;
         _isLoading = false;
         _aiStatusText = null;
+        _streamingText = '';
+        _streamingReasoningText = '';
 
-        // 移除临时消息并添加错误消息
+        // 已经输出的正文不能被错误消息覆盖。保留部分回复并在末尾标记中断；
+        // 尚未收到正文时才显示纯错误消息。
         if (_messages.isNotEmpty &&
             _messages.last.id == tempAssistantMessage.id) {
+          final messageText = _messages.last.content
+              .whereType<TextContent>()
+              .map((item) => item.text)
+              .join();
+          if (messageText.trim().isNotEmpty) partialText = messageText;
+          partialReasoning ??= _messages.last.reasoningContent;
           _messages.removeLast();
         }
+        final cleanError = e.toString().replaceFirst('Exception: ', '');
+        final errorText = partialText.trim().isEmpty
+            ? '抱歉，本次请求失败：$cleanError'
+            : '${partialText.trim()}\n\n> 回复因网络或接口错误中断：$cleanError';
         _messages.add(
           ChatMessage(
             id: DateTime.now().toString(),
             role: MessageRole.assistant,
-            content: [MessageContent.text(text: '抱歉，发生了错误：$e')],
+            content: [MessageContent.text(text: errorText)],
             timestamp: DateTime.now(),
+            modelId: requestModelId,
+            reasoningContent: partialReasoning,
           ),
         );
       });
@@ -2284,6 +2376,13 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen> {
         );
       }
     }
+  }
+
+  void _schedulePartialSave() {
+    if (_partialSaveTimer?.isActive == true) return;
+    _partialSaveTimer = Timer(const Duration(seconds: 1), () {
+      _saveChatHistory();
+    });
   }
 
   /// 解析 XML 格式的工具调用（CherryStudio 风格）

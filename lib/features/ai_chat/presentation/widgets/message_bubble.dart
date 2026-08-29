@@ -269,11 +269,26 @@ class _MessageBubbleState extends State<MessageBubble> {
             ),
           if (!widget.isPending) ...[
             const SizedBox(height: 4),
-            Text(
-              _formatTime(widget.message.timestamp),
-              style: AppTextStyles.bodySmall.copyWith(
-                color: AppColors.textSecondary,
-              ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _formatTime(widget.message.timestamp),
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                if (!isUser && widget.modelName != null) ...[
+                  const SizedBox(width: 4),
+                  Text(
+                    '· ${widget.modelName}',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.textSecondary,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ],
           if (!widget.isStreaming && !widget.isPending)
