@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-04
+
 ### 新增
 - **本地菜谱工具**：AI 可读取分类概览、按现有食材与忌口匹配菜谱、查看我的菜谱，以及读取指定菜谱的收藏状态和个人笔记；列表默认返回 20 条，并允许按需提高 `limit` 获取完整结果。
 
@@ -352,7 +354,8 @@
 ### 修复
 - 解决 AGP 8 下部分三方插件（如 `install_plugin`）缺失 `namespace` 导致的构建失败。
 
-[Unreleased]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.4.10...HEAD
+[Unreleased]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.4.10...v0.5.0
 [0.4.10]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.4.9...v0.4.10
 [0.4.9]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.4.8...v0.4.9
 [0.4.8]: https://github.com/AnLifeX/howtocook-flutter/compare/v0.4.7...v0.4.8

@@ -89,12 +89,7 @@ jobs:
           EOF
 
       - name: Write .env
-        env:
-          MCP_BASE_URL: ${{ secrets.MCP_BASE_URL }}
-        run: |
-          cat > .env <<EOF
-          MCP_BASE_URL=${MCP_BASE_URL}
-          EOF
+        run: cp .env.example .env
 
       - name: Install dependencies
         run: flutter pub get
