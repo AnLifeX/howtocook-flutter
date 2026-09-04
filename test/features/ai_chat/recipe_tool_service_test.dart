@@ -97,6 +97,47 @@ void main() {
     expect(result['warning'], contains('不能'));
   });
 
+  test('列表工具默认返回 20 条，但调用方可以传入更大上限', () async {
+    repository.recipes.addAll(
+      List.generate(
+        22,
+        (index) =>
+            _recipe('extra-$index', '测试菜$index', RecipeSource.userCreated),
+      ),
+    );
+    final tools = service.definitionsFor(RecipeDataMode.local);
+    for (final name in [
+      'searchRecipes',
+      'getRecipeById',
+      'getRecipesByCategory',
+      'getFavoriteRecipes',
+      'findRecipesByIngredients',
+      'getMyRecipes',
+    ]) {
+      final tool = tools.singleWhere((item) => item['name'] == name);
+      final limitSchema =
+          (tool['input_schema'] as Map)['properties']['limit'] as Map;
+      expect(limitSchema['default'], 20, reason: name);
+      expect(limitSchema, isNot(contains('maximum')), reason: name);
+    }
+
+    final defaultResult = await service.execute(
+      mode: RecipeDataMode.local,
+      toolName: 'searchRecipes',
+      input: const {'query': ''},
+    );
+    final completeResult = await service.execute(
+      mode: RecipeDataMode.local,
+      toolName: 'searchRecipes',
+      input: const {'query': '', 'limit': 25},
+    );
+
+    expect(defaultResult['count'], 20);
+    expect(defaultResult['truncated'], isTrue);
+    expect(completeResult['count'], 25);
+    expect(completeResult['truncated'], isFalse);
+  });
+
   test('执行层拒绝云端模式调用本地收藏工具', () async {
     final result = await service.execute(
       mode: RecipeDataMode.cloud,
@@ -166,7 +207,10 @@ void main() {
     );
 
     expect(categories['categories'], hasLength(1));
-    expect((mine['recipes'] as List).map((item) => item['id']), containsAll(['local-1', 'ai-1']));
+    expect(
+      (mine['recipes'] as List).map((item) => item['id']),
+      containsAll(['local-1', 'ai-1']),
+    );
     expect(personal['isFavorite'], isTrue);
   });
 }
@@ -191,7 +235,11 @@ Recipe _recipe(
   );
 }
 
-Recipe _recipeWithIngredients(String id, String name, List<String> ingredients) {
+Recipe _recipeWithIngredients(
+  String id,
+  String name,
+  List<String> ingredients,
+) {
   return Recipe(
     id: id,
     name: name,

@@ -23,7 +23,13 @@ class RecipeToolService {
   final MCPService _cloudService;
   final Random _random;
 
-  static const int maxListResults = 20;
+  static const int defaultListResults = 20;
+  static const Map<String, dynamic> _limitSchema = {
+    'type': 'integer',
+    'minimum': 1,
+    'default': defaultListResults,
+    'description': '本次最多返回多少条；不传默认 20，需要完整结果时可传 totalMatches，无固定上限。',
+  };
 
   static const Map<String, dynamic> createRecipeInputSchema = {
     'type': 'object',
@@ -141,39 +147,48 @@ class RecipeToolService {
   static final List<Map<String, dynamic>> _commonTools = [
     _tool(
       'searchRecipes',
-      '搜索当前数据模式的菜谱。返回最多 20 条精简摘要；truncated=true 表示结果不完整，不得据此断言某菜谱不存在。零结果时先用精简菜名或主要食材复查，需要做法时再调用 getRecipeById。',
+      '搜索当前数据模式的菜谱并返回精简摘要。limit 不传默认 20；truncated=true 时不得断言某菜谱不存在，需要完整结果可用 totalMatches 作为 limit 再查询。零结果时先用精简菜名或主要食材复查，需要做法时再调用 getRecipeById。',
       {
         'type': 'object',
         'properties': {
           'query': {'type': 'string', 'description': '菜名、分类或食材关键词；可留空浏览。'},
           'category': {'type': 'string', 'description': '可选分类 ID 或中文名。'},
-          'limit': {'type': 'integer', 'minimum': 1, 'maximum': maxListResults},
+          'limit': _limitSchema,
         },
       },
     ),
-    _tool('getRecipeById', '按 searchRecipes 返回的原始 ID 获取完整菜谱；也兼容输入准确菜名。', {
-      'type': 'object',
-      'properties': {
-        'id': {'type': 'string'},
-        'query': {'type': 'string'},
-      },
-      'anyOf': [
-        {
-          'required': ['id'],
+    _tool(
+      'getRecipeById',
+      '按 searchRecipes 返回的原始 ID 获取完整菜谱；也兼容输入准确菜名。模糊匹配出现多个建议时，limit 不传默认 20，可按需提高。',
+      {
+        'type': 'object',
+        'properties': {
+          'id': {'type': 'string'},
+          'query': {'type': 'string'},
+          'limit': _limitSchema,
         },
-        {
-          'required': ['query'],
-        },
-      ],
-    }),
-    _tool('getRecipesByCategory', '按分类获取菜谱摘要，返回数量受限；需要详情时再调用 getRecipeById。', {
-      'type': 'object',
-      'properties': {
-        'category': {'type': 'string'},
-        'limit': {'type': 'integer', 'minimum': 1, 'maximum': maxListResults},
+        'anyOf': [
+          {
+            'required': ['id'],
+          },
+          {
+            'required': ['query'],
+          },
+        ],
       },
-      'required': ['category'],
-    }),
+    ),
+    _tool(
+      'getRecipesByCategory',
+      '按分类获取菜谱摘要；limit 不传默认 20，可按需提高；需要详情时再调用 getRecipeById。',
+      {
+        'type': 'object',
+        'properties': {
+          'category': {'type': 'string'},
+          'limit': _limitSchema,
+        },
+        'required': ['category'],
+      },
+    ),
     _tool('recommendMeals', '按人数、过敏和忌口推荐菜谱摘要。', {
       'type': 'object',
       'properties': {
@@ -202,40 +217,46 @@ class RecipeToolService {
   ];
 
   static final List<Map<String, dynamic>> _localTools = [
-    _tool('getFavoriteRecipes', '读取用户在本机收藏的菜谱摘要。仅本地数据模式允许。', {
-      'type': 'object',
-      'properties': {
-        'limit': {'type': 'integer', 'minimum': 1, 'maximum': maxListResults},
+    _tool(
+      'getFavoriteRecipes',
+      '读取用户在本机收藏的菜谱摘要；limit 不传默认 20，可按需提高。仅本地数据模式允许。',
+      {
+        'type': 'object',
+        'properties': {'limit': _limitSchema},
       },
-    }),
+    ),
     _tool('listRecipeCategories', '列出本地菜谱分类、分类 ID 和数量，用于浏览前确认可用分类。', {
       'type': 'object',
       'properties': <String, dynamic>{},
     }),
-    _tool('findRecipesByIngredients', '根据用户现有食材匹配本地菜谱，优先返回缺少必需食材更少的结果。', {
-      'type': 'object',
-      'properties': {
-        'ingredients': {
-          'type': 'array',
-          'items': {'type': 'string'},
-          'minItems': 1,
+    _tool(
+      'findRecipesByIngredients',
+      '根据用户现有食材匹配本地菜谱，优先返回缺少必需食材更少的结果；limit 不传默认 20，可按需提高。',
+      {
+        'type': 'object',
+        'properties': {
+          'ingredients': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'minItems': 1,
+          },
+          'excludeIngredients': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'description': '过敏、忌口或明确不想使用的食材。',
+          },
+          'category': {'type': 'string', 'description': '可选分类 ID 或中文名。'},
+          'maxDifficulty': {'type': 'integer', 'minimum': 1, 'maximum': 5},
+          'limit': _limitSchema,
         },
-        'excludeIngredients': {
-          'type': 'array',
-          'items': {'type': 'string'},
-          'description': '过敏、忌口或明确不想使用的食材。',
-        },
-        'category': {'type': 'string', 'description': '可选分类 ID 或中文名。'},
-        'maxDifficulty': {'type': 'integer', 'minimum': 1, 'maximum': 5},
-        'limit': {'type': 'integer', 'minimum': 1, 'maximum': maxListResults},
+        'required': ['ingredients'],
       },
-      'required': ['ingredients'],
-    }),
-    _tool('getMyRecipes', '读取用户自建、修改、扫码导入或已保存的 AI 菜谱摘要。', {
+    ),
+    _tool('getMyRecipes', '读取用户自建、修改、扫码导入或已保存的 AI 菜谱摘要；limit 不传默认 20，可按需提高。', {
       'type': 'object',
       'properties': {
         'query': {'type': 'string', 'description': '可选菜名、分类或食材关键词。'},
-        'limit': {'type': 'integer', 'minimum': 1, 'maximum': maxListResults},
+        'limit': _limitSchema,
       },
     }),
     _tool('getRecipePersonalInfo', '按菜谱原始 ID 读取本机收藏状态和用户笔记。', {
@@ -326,11 +347,18 @@ class RecipeToolService {
         if (direct != null) return _detailResult(direct);
         final matches = await _localRepository.searchRecipes(query);
         if (matches.length == 1) return _detailResult(matches.first);
+        final limit = _resultLimit(input['limit']);
+        final truncated = matches.length > limit;
         return {
           'success': false,
           'query': query,
           'error': matches.isEmpty ? '未找到匹配菜谱' : '找到多个结果，请使用返回的原始 ID 再查询',
-          'possibleMatches': matches.take(8).map(_summary).toList(),
+          'possibleMatches': matches.take(limit).map(_summary).toList(),
+          'totalMatches': matches.length,
+          'truncated': truncated,
+          'resultCoverage': truncated ? 'partial' : 'complete',
+          if (truncated)
+            'warning': '匹配建议已截断，不能据此判断其他菜谱不存在；请将 limit 提高到 ${matches.length}',
         };
       case 'getFavoriteRecipes':
         return _listResult(await _localRepository.getFavoriteRecipes(), input);
@@ -348,7 +376,9 @@ class RecipeToolService {
           category['count'] = (category['count'] as int) + 1;
         }
         final categories = counts.values.toList()
-          ..sort((a, b) => a['name'].toString().compareTo(b['name'].toString()));
+          ..sort(
+            (a, b) => a['name'].toString().compareTo(b['name'].toString()),
+          );
         return {
           'success': true,
           'categories': categories,
@@ -542,7 +572,7 @@ class RecipeToolService {
       matches.add({
         ..._summary(recipe),
         'matchedIngredients': matched,
-        'missingIngredients': missing.take(8).toList(),
+        'missingIngredients': missing,
         'missingIngredientCount': missing.length,
       });
     }
@@ -557,7 +587,8 @@ class RecipeToolService {
       if (byMatched != 0) return byMatched;
       return a['name'].toString().compareTo(b['name'].toString());
     });
-    final limit = _int(input['limit'], maxListResults, 1, maxListResults);
+    final limit = _resultLimit(input['limit']);
+    final truncated = matches.length > limit;
     return {
       'success': true,
       'ingredients': available,
@@ -566,12 +597,17 @@ class RecipeToolService {
       'recipes': matches.take(limit).toList(),
       'count': matches.length.clamp(0, limit),
       'totalMatches': matches.length,
-      'truncated': matches.length > limit,
+      'truncated': truncated,
+      'resultCoverage': truncated ? 'partial' : 'complete',
+      if (truncated)
+        'warning': '结果已截断，不能据此判断其他菜谱不存在；需要完整结果时请将 limit 提高到 ${matches.length}',
     };
   }
 
   bool _ingredientMatches(Ingredient ingredient, String query) {
-    final haystack = _normalizeSearchText('${ingredient.name} ${ingredient.text}');
+    final haystack = _normalizeSearchText(
+      '${ingredient.name} ${ingredient.text}',
+    );
     return _searchVariants(query).any(haystack.contains);
   }
 
@@ -616,7 +652,7 @@ class RecipeToolService {
     String? category,
     int? peopleCount,
   }) {
-    final limit = _int(input['limit'], maxListResults, 1, maxListResults);
+    final limit = _resultLimit(input['limit']);
     final items = recipes.take(limit).map(_summary).toList();
     final truncated = recipes.length > items.length;
     return {
@@ -629,7 +665,8 @@ class RecipeToolService {
       'totalMatches': recipes.length,
       'truncated': truncated,
       'resultCoverage': truncated ? 'partial' : 'complete',
-      if (truncated) 'warning': '结果已截断，不能据此判断未返回的菜谱不存在',
+      if (truncated)
+        'warning': '结果已截断，不能据此判断其他菜谱不存在；需要完整结果时请将 limit 提高到 ${recipes.length}',
     };
   }
 
@@ -739,6 +776,12 @@ class RecipeToolService {
   static int _int(dynamic value, int fallback, int min, int max) {
     final parsed = value is num ? value.toInt() : int.tryParse(_string(value));
     return (parsed ?? fallback).clamp(min, max);
+  }
+
+  static int _resultLimit(dynamic value) {
+    final parsed = value is num ? value.toInt() : int.tryParse(_string(value));
+    final limit = parsed ?? defaultListResults;
+    return limit < 1 ? 1 : limit;
   }
 
   static List<String> _strings(dynamic value) {
