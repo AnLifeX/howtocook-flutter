@@ -12,7 +12,7 @@ void main() {
     String? apiUrl,
     String modelId = 'deepseek-v4-flash',
     ModelCapabilities capabilities = const ModelCapabilities(
-      supportsMCP: false,
+      supportsTools: false,
     ),
   }) {
     return AIModelConfig(
@@ -35,6 +35,17 @@ void main() {
     final json = persistedJson(config(apiFormat: AIAPIFormat.responses))
       ..remove('apiFormat');
     expect(AIModelConfig.fromJson(json).apiFormat, AIAPIFormat.auto);
+  });
+
+  test('legacy supportsMCP capability migrates to supportsTools', () {
+    expect(
+      ModelCapabilities.fromJson(const {'supportsMCP': false}).supportsTools,
+      isFalse,
+    );
+    expect(
+      const ModelCapabilities(supportsTools: false).toJson(),
+      containsPair('supportsTools', false),
+    );
   });
 
   test('API format wire values survive JSON persistence', () {
@@ -134,6 +145,23 @@ void main() {
         timestamp: DateTime.fromMillisecondsSinceEpoch(2),
       ),
     ];
+
+    test('Anthropic Messages uses only standard local tool blocks', () {
+      final adapter = ClaudeAdapter(
+        apiKey: 'test-key',
+        modelId: 'claude-sonnet-4',
+      );
+      final request = adapter.buildRequestForTesting(
+        messages: history,
+        tools: tools,
+      );
+      final messages = request['messages'] as List<dynamic>;
+
+      expect(request['tools'][0]['name'], 'searchRecipes');
+      expect(request, isNot(contains('mcp_servers')));
+      expect(messages[0]['content'][0]['type'], 'tool_use');
+      expect(messages[1]['content'][0]['type'], 'tool_result');
+    });
 
     test('Chat Completions encodes definitions, calls and results', () {
       final adapter = DeepSeekAdapter(

@@ -15,7 +15,6 @@ class ClaudeAdapter implements AIService {
   final String apiKey;
   final String modelId;
   final String? customApiUrl;
-  final String? mcpServerUrl;
   final bool enableThinking;
   final int thinkingBudgetTokens;
 
@@ -26,28 +25,17 @@ class ClaudeAdapter implements AIService {
     required this.apiKey,
     required this.modelId,
     this.customApiUrl,
-    this.mcpServerUrl,
     this.enableThinking = false,
     this.thinkingBudgetTokens = 10000,
   }) : _dio = Dio() {
     final baseUrl = _normalizeBaseUrl(customApiUrl ?? defaultApiUrl);
     _dio.options.baseUrl = baseUrl;
 
-    // 基础headers
-    final headers = {
+    _dio.options.headers = {
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01',
       'content-type': 'application/json',
     };
-
-    // 仅在使用官方API时添加anthropic-beta头（中转服务可能不支持）
-    if (customApiUrl == null || customApiUrl!.contains('anthropic.com')) {
-      headers['anthropic-beta'] = 'mcp-client-2025-04-04';
-    } else {
-      debugPrint('⚠️  Using custom API, skipping anthropic-beta header');
-    }
-
-    _dio.options.headers = headers;
     _dio.options.connectTimeout = const Duration(seconds: 30);
     _dio.options.receiveTimeout = const Duration(seconds: 300);
   }
@@ -464,6 +452,14 @@ class ClaudeAdapter implements AIService {
     };
   }
 
+  @visibleForTesting
+  Map<String, dynamic> buildRequestForTesting({
+    required List<ChatMessage> messages,
+    List<Map<String, dynamic>>? tools,
+    int? maxTokens,
+    bool stream = false,
+  }) => _buildRequest(messages, tools, maxTokens, stream: stream);
+
   /// 构建请求数据
   Map<String, dynamic> _buildRequest(
     List<ChatMessage> messages,
@@ -535,18 +531,7 @@ class ClaudeAdapter implements AIService {
       }
     } else {
       // 未启用思考链时，使用标准 tools 参数
-      // 官方 API 且配置了 MCP Server：使用 MCP connector 模式
-      if (isOfficialApi &&
-          tools != null &&
-          tools.isNotEmpty &&
-          mcpServerUrl != null &&
-          mcpServerUrl!.isNotEmpty) {
-        requestData['mcp_servers'] = [
-          {'type': 'url', 'url': mcpServerUrl, 'name': 'howtocook-mcp'},
-        ];
-        debugPrint('🔧 Using MCP connector mode for official API');
-      } else if (tools != null && tools.isNotEmpty) {
-        // 标准工具调用模式（适用于自定义 API 或无 MCP Server 的情况）
+      if (tools != null && tools.isNotEmpty) {
         requestData['tools'] = tools;
         debugPrint('🔧 Using standard tools mode: ${tools.length} tools');
       }
@@ -615,10 +600,6 @@ class ClaudeAdapter implements AIService {
   /// 转换消息格式
   Map<String, dynamic> _convertMessage(ChatMessage message) {
     final content = <Map<String, dynamic>>[];
-    final isOfficialApi =
-        customApiUrl == null || customApiUrl!.contains('anthropic.com');
-    final useMcpFormat =
-        isOfficialApi && mcpServerUrl != null && mcpServerUrl!.isNotEmpty;
 
     for (final item in message.content) {
       if (item is TextContent) {
@@ -633,43 +614,18 @@ class ClaudeAdapter implements AIService {
           },
         });
       } else if (item is ToolUseContent) {
-        // 官方 API + MCP Server：使用 mcp_tool_use 类型
-        if (useMcpFormat) {
-          content.add({
-            'type': 'mcp_tool_use',
-            'id': item.toolUseId,
-            'name': item.name,
-            'server_name': 'howtocook-mcp',
-            'input': item.input,
-          });
-        } else {
-          // 标准工具调用（自定义 API 或无 MCP）
-          content.add({
-            'type': 'tool_use',
-            'id': item.toolUseId,
-            'name': item.name,
-            'input': item.input,
-          });
-        }
+        content.add({
+          'type': 'tool_use',
+          'id': item.toolUseId,
+          'name': item.name,
+          'input': item.input,
+        });
       } else if (item is ToolResultContent) {
-        // 官方 API + MCP Server：使用 mcp_tool_result 类型
-        if (useMcpFormat) {
-          content.add({
-            'type': 'mcp_tool_result',
-            'tool_use_id': item.toolUseId,
-            'is_error': false,
-            'content': [
-              {'type': 'text', 'text': jsonEncode(item.result)},
-            ],
-          });
-        } else {
-          // 标准工具结果（自定义 API 或无 MCP）
-          content.add({
-            'type': 'tool_result',
-            'tool_use_id': item.toolUseId,
-            'content': item.result,
-          });
-        }
+        content.add({
+          'type': 'tool_result',
+          'tool_use_id': item.toolUseId,
+          'content': item.result,
+        });
       }
     }
 

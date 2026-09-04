@@ -488,7 +488,7 @@ class DeepSeekAdapter implements AIService {
     }
   }
 
-  /// 转换工具定义（从 MCP 格式到 OpenAI 兼容格式）
+  /// 转换工具定义（从应用格式到 OpenAI 兼容格式）
   Map<String, dynamic> _convertTool(Map<String, dynamic> tool) {
     return {
       'type': 'function',

@@ -3,24 +3,17 @@ import 'dart:math';
 
 import '../../../recipe/domain/entities/recipe.dart';
 import '../../../recipe/domain/repositories/recipe_repository.dart';
-import '../../domain/entities/recipe_data_mode.dart';
-import 'mcp_service.dart';
 
 /// App 内置菜谱工具目录与执行器。
 ///
-/// 工具目录决定模型能看到什么，execute 会按当前模式再次校验，防止模型伪造
+/// 工具目录决定模型能看到什么，execute 会再次校验，防止模型伪造
 /// 未授权的工具名。所有列表类结果仅返回摘要，避免把整库灌入上下文。
 class RecipeToolService {
-  RecipeToolService({
-    required RecipeRepository localRepository,
-    required MCPService cloudService,
-    Random? random,
-  }) : _localRepository = localRepository,
-       _cloudService = cloudService,
-       _random = random ?? Random();
+  RecipeToolService({required RecipeRepository localRepository, Random? random})
+    : _localRepository = localRepository,
+      _random = random ?? Random();
 
   final RecipeRepository _localRepository;
-  final MCPService _cloudService;
   final Random _random;
 
   static const int defaultListResults = 20;
@@ -147,7 +140,7 @@ class RecipeToolService {
   static final List<Map<String, dynamic>> _commonTools = [
     _tool(
       'searchRecipes',
-      '搜索当前数据模式的菜谱并返回精简摘要。limit 不传默认 20；truncated=true 时不得断言某菜谱不存在，需要完整结果可用 totalMatches 作为 limit 再查询。零结果时先用精简菜名或主要食材复查，需要做法时再调用 getRecipeById。',
+      '搜索本机已同步的菜谱并返回精简摘要。limit 不传默认 20；truncated=true 时不得断言某菜谱不存在，需要完整结果可用 totalMatches 作为 limit 再查询。零结果时先用精简菜名或主要食材复查，需要做法时再调用 getRecipeById。',
       {
         'type': 'object',
         'properties': {
@@ -217,14 +210,10 @@ class RecipeToolService {
   ];
 
   static final List<Map<String, dynamic>> _localTools = [
-    _tool(
-      'getFavoriteRecipes',
-      '读取用户在本机收藏的菜谱摘要；limit 不传默认 20，可按需提高。仅本地数据模式允许。',
-      {
-        'type': 'object',
-        'properties': {'limit': _limitSchema},
-      },
-    ),
+    _tool('getFavoriteRecipes', '读取用户在本机收藏的菜谱摘要；limit 不传默认 20，可按需提高。', {
+      'type': 'object',
+      'properties': {'limit': _limitSchema},
+    }),
     _tool('listRecipeCategories', '列出本地菜谱分类、分类 ID 和数量，用于浏览前确认可用分类。', {
       'type': 'object',
       'properties': <String, dynamic>{},
@@ -268,11 +257,11 @@ class RecipeToolService {
     }),
   ];
 
-  List<Map<String, dynamic>> definitionsFor(RecipeDataMode mode) {
+  List<Map<String, dynamic>> definitions() {
     final tools =
         [
             ..._commonTools,
-            if (mode == RecipeDataMode.local) ..._localTools,
+            ..._localTools,
           ].map((item) => _canonicalize(item) as Map<String, dynamic>).toList()
           ..sort(
             (a, b) => a['name'].toString().compareTo(b['name'].toString()),
@@ -281,26 +270,22 @@ class RecipeToolService {
   }
 
   Future<Map<String, dynamic>> execute({
-    required RecipeDataMode mode,
     required String toolName,
     required Map<String, dynamic> input,
   }) async {
-    final normalizedName = _normalizeToolName(toolName);
-    final allowed = definitionsFor(
-      mode,
-    ).map((tool) => tool['name']).contains(normalizedName);
+    final allowed = definitions()
+        .map((tool) => tool['name'])
+        .contains(toolName);
     if (!allowed) {
       return {
         'success': false,
-        'error': '工具 $normalizedName 在${mode.label}模式下未授权',
+        'error': '工具 $toolName 未授权',
         'code': 'tool_not_allowed',
       };
     }
 
     try {
-      return mode == RecipeDataMode.local
-          ? await _executeLocal(normalizedName, input)
-          : await _executeCloud(normalizedName, input);
+      return await _executeLocal(toolName, input);
     } catch (error) {
       return {
         'success': false,
@@ -412,83 +397,6 @@ class RecipeToolService {
         return _localRecommendations(input, randomize: true);
       case 'createRecipe':
         return _localCreate(input);
-    }
-    throw StateError('未知工具: $name');
-  }
-
-  Future<Map<String, dynamic>> _executeCloud(
-    String name,
-    Map<String, dynamic> input,
-  ) async {
-    switch (name) {
-      case 'searchRecipes':
-        final query = _string(input['query'] ?? input['keyword']);
-        var recipes = query.isEmpty
-            ? await _cloudService.getAllRecipes()
-            : await _cloudService.searchRecipes(query);
-        recipes = _filterCategory(recipes, _string(input['category']));
-        return _listResult(recipes, input, query: query);
-      case 'getRecipesByCategory':
-        final category = _requiredString(
-          input['category'] ?? input['categoryName'],
-          'category',
-        );
-        return _listResult(
-          await _cloudService.getRecipesByCategory(category),
-          input,
-          category: category,
-        );
-      case 'getRecipeById':
-        final query = _requiredString(
-          input['id'] ??
-              input['query'] ??
-              input['recipeId'] ??
-              input['recipeName'],
-          'id/query',
-        );
-        final value = await _cloudService.getRecipeById(query);
-        if (value is Recipe) return _detailResult(value);
-        if (value is Map) {
-          return {'success': false, ...Map<String, dynamic>.from(value)};
-        }
-        return {'success': false, 'error': value.toString(), 'query': query};
-      case 'recommendMeals':
-        final result = await _cloudService.recommendMeals(
-          peopleCount: _int(input['peopleCount'] ?? input['people'], 2, 1, 10),
-          allergies: _strings(input['allergies']),
-          avoidItems: _strings(input['avoidItems']),
-        );
-        return {'success': true, ...result};
-      case 'whatToEat':
-        final people = _int(input['peopleCount'] ?? input['people'], 2, 1, 10);
-        final recipes = await _cloudService.whatToEat(peopleCount: people);
-        return _listResult(recipes, input, peopleCount: people);
-      case 'createRecipe':
-        final recipe = _map(input['recipe']);
-        final recipeText = _string(input['recipeText'] ?? input['text']);
-        if (recipe == null && recipeText.isEmpty) {
-          throw const FormatException('recipe 或 recipeText 至少需要一个');
-        }
-        final result = await _cloudService.createRecipe(
-          recipe: recipe,
-          recipeText: recipeText.isEmpty
-              ? (recipe == null ? null : jsonEncode(recipe))
-              : recipeText,
-          checkDuplicate: input['checkDuplicate'] != false,
-          similarityThreshold:
-              (input['similarityThreshold'] as num?)?.toDouble() ?? 0.75,
-        );
-        if (recipe != null && result['recipe'] is Map) {
-          return {
-            ...result,
-            'success': true,
-            'recipe': {
-              ...Map<String, dynamic>.from(result['recipe'] as Map),
-              ...recipe,
-            },
-          };
-        }
-        return {'success': true, ...result};
     }
     throw StateError('未知工具: $name');
   }
@@ -754,15 +662,6 @@ class RecipeToolService {
     }
     if (value is List) return value.map(_canonicalize).toList();
     return value;
-  }
-
-  static String _normalizeToolName(String value) {
-    final name = value.replaceFirst('mcp_howtocook_', '');
-    return switch (name) {
-      'getAllRecipes' => 'searchRecipes',
-      'getRecipeDetail' => 'getRecipeById',
-      _ => name,
-    };
   }
 
   static String _string(dynamic value) => value?.toString().trim() ?? '';

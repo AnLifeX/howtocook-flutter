@@ -13,7 +13,7 @@
 **特性**:
 - ✅ 流式响应
 - ✅ 图片输入（Vision）
-- ✅ 工具调用（MCP）
+- ✅ 标准工具调用
 - ✅ 自定义 API URL
 
 **配置示例** (.env):
@@ -200,12 +200,12 @@ final response = await service.sendMessageSync(
 );
 ```
 
-## 工具调用（MCP）
+## 工具调用
 
 所有适配器都支持工具调用：
 
 ```dart
-// 定义 MCP 工具
+// 定义应用工具
 final tools = [
   {
     'name': 'search_recipes',

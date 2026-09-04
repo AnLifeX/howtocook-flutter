@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'ai_usage_metrics.dart';
-import 'recipe_data_mode.dart';
 
 class ConversationContextState {
   const ConversationContextState({
@@ -14,7 +13,6 @@ class ConversationContextState {
     this.totalCacheReadTokens = 0,
     this.totalCacheMissTokens = 0,
     this.compressionApproved = false,
-    this.recipeDataMode = RecipeDataMode.local,
   });
 
   final String? summary;
@@ -26,7 +24,6 @@ class ConversationContextState {
   final int totalCacheReadTokens;
   final int totalCacheMissTokens;
   final bool compressionApproved;
-  final RecipeDataMode recipeDataMode;
 
   bool get hasSummary => summary != null && summary!.trim().isNotEmpty;
 
@@ -54,7 +51,6 @@ class ConversationContextState {
     int? totalCacheReadTokens,
     int? totalCacheMissTokens,
     bool? compressionApproved,
-    RecipeDataMode? recipeDataMode,
   }) {
     return ConversationContextState(
       summary: clearSummary ? null : (summary ?? this.summary),
@@ -67,7 +63,6 @@ class ConversationContextState {
       totalCacheReadTokens: totalCacheReadTokens ?? this.totalCacheReadTokens,
       totalCacheMissTokens: totalCacheMissTokens ?? this.totalCacheMissTokens,
       compressionApproved: compressionApproved ?? this.compressionApproved,
-      recipeDataMode: recipeDataMode ?? this.recipeDataMode,
     );
   }
 
@@ -93,7 +88,6 @@ class ConversationContextState {
     'totalCacheReadTokens': totalCacheReadTokens,
     'totalCacheMissTokens': totalCacheMissTokens,
     'compressionApproved': compressionApproved,
-    'recipeDataMode': recipeDataMode.storageValue,
   };
 
   factory ConversationContextState.fromJson(Map<String, dynamic> json) {
@@ -109,7 +103,6 @@ class ConversationContextState {
       totalCacheReadTokens: readInt('totalCacheReadTokens'),
       totalCacheMissTokens: readInt('totalCacheMissTokens'),
       compressionApproved: json['compressionApproved'] == true,
-      recipeDataMode: RecipeDataModeX.fromStorage(json['recipeDataMode']),
     );
   }
 }

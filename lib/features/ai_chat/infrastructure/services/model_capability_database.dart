@@ -42,21 +42,18 @@ class ModelCapabilityDatabase {
       case AIProvider.claude:
         return const ModelCapabilities(
           supportsImageInput: true,
-          supportsMCP: true,
           maxTokens: 4096,
           contextWindow: 200000,
         );
       case AIProvider.openai:
         return const ModelCapabilities(
           supportsImageInput: true,
-          supportsMCP: true,
           maxTokens: 4096,
           contextWindow: 128000,
         );
       case AIProvider.deepseek:
         return const ModelCapabilities(
           supportsImageInput: false,
-          supportsMCP: true,
           maxTokens: 8192,
           contextWindow: 64000,
         );
@@ -69,13 +66,11 @@ class ModelCapabilityDatabase {
     // Claude 3.5 Sonnet 系列
     'claude:claude-3-5-sonnet-20241022': const ModelCapabilities(
       supportsImageInput: true,
-      supportsMCP: true,
       maxTokens: 8192,
       contextWindow: 200000,
     ),
     'claude:claude-3-5-sonnet-20240620': const ModelCapabilities(
       supportsImageInput: true,
-      supportsMCP: true,
       maxTokens: 8192,
       contextWindow: 200000,
     ),
@@ -83,13 +78,11 @@ class ModelCapabilityDatabase {
     // Claude Sonnet 4 系列（2025 最新）
     'claude:claude-sonnet-4-20250514': const ModelCapabilities(
       supportsImageInput: true,
-      supportsMCP: true,
       maxTokens: 8192,
       contextWindow: 200000,
     ),
     'claude:claude-sonnet-4-5-20250929': const ModelCapabilities(
       supportsImageInput: true,
-      supportsMCP: true,
       maxTokens: 8192,
       contextWindow: 200000,
     ),
@@ -97,7 +90,6 @@ class ModelCapabilityDatabase {
     // Claude 3 Opus
     'claude:claude-3-opus-20240229': const ModelCapabilities(
       supportsImageInput: true,
-      supportsMCP: true,
       maxTokens: 4096,
       contextWindow: 200000,
     ),
@@ -105,7 +97,6 @@ class ModelCapabilityDatabase {
     // Claude 3 Haiku
     'claude:claude-3-haiku-20240307': const ModelCapabilities(
       supportsImageInput: true,
-      supportsMCP: true,
       maxTokens: 4096,
       contextWindow: 200000,
     ),
@@ -114,25 +105,21 @@ class ModelCapabilityDatabase {
     // GPT-4o 系列
     'openai:gpt-4o': const ModelCapabilities(
       supportsImageInput: true,
-      supportsMCP: true,
       maxTokens: 4096,
       contextWindow: 128000,
     ),
     'openai:gpt-4o-mini': const ModelCapabilities(
       supportsImageInput: true,
-      supportsMCP: true,
       maxTokens: 16384,
       contextWindow: 128000,
     ),
     'openai:gpt-4o-2024-11-20': const ModelCapabilities(
       supportsImageInput: true,
-      supportsMCP: true,
       maxTokens: 16384,
       contextWindow: 128000,
     ),
     'openai:gpt-4o-2024-08-06': const ModelCapabilities(
       supportsImageInput: true,
-      supportsMCP: true,
       maxTokens: 16384,
       contextWindow: 128000,
     ),
@@ -140,13 +127,11 @@ class ModelCapabilityDatabase {
     // GPT-4 Turbo 系列
     'openai:gpt-4-turbo': const ModelCapabilities(
       supportsImageInput: true,
-      supportsMCP: true,
       maxTokens: 4096,
       contextWindow: 128000,
     ),
     'openai:gpt-4-turbo-preview': const ModelCapabilities(
       supportsImageInput: true,
-      supportsMCP: true,
       maxTokens: 4096,
       contextWindow: 128000,
     ),
@@ -154,7 +139,6 @@ class ModelCapabilityDatabase {
     // GPT-4 Vision
     'openai:gpt-4-vision-preview': const ModelCapabilities(
       supportsImageInput: true,
-      supportsMCP: true,
       maxTokens: 4096,
       contextWindow: 128000,
     ),
@@ -162,7 +146,6 @@ class ModelCapabilityDatabase {
     // GPT-4 标准版
     'openai:gpt-4': const ModelCapabilities(
       supportsImageInput: false,
-      supportsMCP: true,
       maxTokens: 8192,
       contextWindow: 8192,
     ),
@@ -170,7 +153,6 @@ class ModelCapabilityDatabase {
     // GPT-3.5 系列
     'openai:gpt-3.5-turbo': const ModelCapabilities(
       supportsImageInput: false,
-      supportsMCP: true,
       maxTokens: 4096,
       contextWindow: 16385,
     ),
@@ -178,13 +160,11 @@ class ModelCapabilityDatabase {
     // GPT-5 (未来模型，预留)
     'openai:gpt-5': const ModelCapabilities(
       supportsImageInput: true,
-      supportsMCP: true,
       maxTokens: 16384,
       contextWindow: 256000,
     ),
     'openai:gpt-5-2025-08-07': const ModelCapabilities(
       supportsImageInput: true,
-      supportsMCP: true,
       maxTokens: 16384,
       contextWindow: 256000,
     ),
@@ -192,26 +172,22 @@ class ModelCapabilityDatabase {
     // ========== DeepSeek 模型 ==========
     'deepseek:deepseek-v4-flash': const ModelCapabilities(
       supportsImageInput: false,
-      supportsMCP: true,
       maxTokens: 8192,
       contextWindow: 1000000,
     ),
     'deepseek:deepseek-v4-pro': const ModelCapabilities(
       supportsImageInput: false,
-      supportsMCP: true,
       maxTokens: 8192,
       contextWindow: 1000000,
     ),
     // 旧模型 ID（兼容期至 2026-07-24，之后将停用）
     'deepseek:deepseek-chat': const ModelCapabilities(
       supportsImageInput: false,
-      supportsMCP: true,
       maxTokens: 8192,
       contextWindow: 1000000,
     ),
     'deepseek:deepseek-reasoner': const ModelCapabilities(
       supportsImageInput: false,
-      supportsMCP: true,
       maxTokens: 8192,
       contextWindow: 1000000,
     ),

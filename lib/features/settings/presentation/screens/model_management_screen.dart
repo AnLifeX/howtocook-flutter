@@ -245,7 +245,7 @@ class _ModelManagementScreenState extends ConsumerState<ModelManagementScreen> {
                   '图片输入',
                   model.capabilities.supportsImageInput,
                 ),
-                _buildCapabilityTag('MCP', model.capabilities.supportsMCP),
+                _buildCapabilityTag('工具', model.capabilities.supportsTools),
                 _buildCapabilityTag('流式输出', model.capabilities.enableStreaming),
               ],
             ),
@@ -389,7 +389,7 @@ class _ModelFormSheetState extends ConsumerState<ModelFormSheet> {
   late AIAPIFormat _apiFormat;
   late bool _supportsImageInput;
   late bool _supportsFileInput;
-  late bool _supportsMCP;
+  late bool _supportsTools;
   late bool _enableStreaming;
   late bool _enableThinking;
   late TextEditingController _thinkingBudgetController;
@@ -435,7 +435,7 @@ class _ModelFormSheetState extends ConsumerState<ModelFormSheet> {
 
     _supportsImageInput = initial?.capabilities.supportsImageInput ?? false;
     _supportsFileInput = initial?.capabilities.supportsFileInput ?? false;
-    _supportsMCP = initial?.capabilities.supportsMCP ?? true;
+    _supportsTools = initial?.capabilities.supportsTools ?? true;
     _enableStreaming = initial?.capabilities.enableStreaming ?? true;
     _enableThinking = initial?.capabilities.enableThinking ?? false;
     _thinkingBudgetController = TextEditingController(
@@ -677,13 +677,13 @@ class _ModelFormSheetState extends ConsumerState<ModelFormSheet> {
                 title: Text('支持文件输入', style: AppTextStyles.bodyMedium),
               ),
               SwitchListTile.adaptive(
-                value: _supportsMCP,
+                value: _supportsTools,
                 contentPadding: EdgeInsets.zero,
                 onChanged: (value) => setState(() {
-                  _supportsMCP = value;
+                  _supportsTools = value;
                   _markCapabilitiesEdited();
                 }),
-                title: Text('支持 MCP 工具调用', style: AppTextStyles.bodyMedium),
+                title: Text('支持应用工具调用', style: AppTextStyles.bodyMedium),
               ),
               SwitchListTile.adaptive(
                 value: _enableStreaming,
@@ -868,7 +868,7 @@ class _ModelFormSheetState extends ConsumerState<ModelFormSheet> {
       capabilities: ModelCapabilities(
         supportsImageInput: _supportsImageInput,
         supportsFileInput: _supportsFileInput,
-        supportsMCP: _supportsMCP,
+        supportsTools: _supportsTools,
         enableStreaming: _enableStreaming,
         enableThinking: _enableThinking,
         thinkingBudgetTokens:
@@ -935,7 +935,7 @@ class _ModelFormSheetState extends ConsumerState<ModelFormSheet> {
     _isApplyingCapabilities = true;
     _supportsImageInput = capabilities.supportsImageInput;
     _supportsFileInput = capabilities.supportsFileInput;
-    _supportsMCP = capabilities.supportsMCP;
+    _supportsTools = capabilities.supportsTools;
     _enableStreaming = capabilities.enableStreaming;
     _enableThinking = capabilities.enableThinking;
     _thinkingBudgetController.text = capabilities.thinkingBudgetTokens

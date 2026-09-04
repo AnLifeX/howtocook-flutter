@@ -98,7 +98,7 @@ class AvailableModels extends _$AvailableModels {
       'capabilities': {
         'supportsImageInput': model.capabilities.supportsImageInput,
         'supportsFileInput': model.capabilities.supportsFileInput,
-        'supportsMCP': model.capabilities.supportsMCP,
+        'supportsTools': model.capabilities.supportsTools,
         'enableStreaming': model.capabilities.enableStreaming,
         'enableThinking': model.capabilities.enableThinking,
         'thinkingBudgetTokens': model.capabilities.thinkingBudgetTokens,

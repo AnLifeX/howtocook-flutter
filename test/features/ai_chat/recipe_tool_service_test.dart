@@ -1,8 +1,6 @@
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:howtocook/features/ai_chat/domain/entities/recipe_data_mode.dart';
-import 'package:howtocook/features/ai_chat/infrastructure/services/mcp_service.dart';
 import 'package:howtocook/features/ai_chat/infrastructure/services/recipe_tool_service.dart';
 import 'package:howtocook/features/recipe/domain/entities/recipe.dart';
 import 'package:howtocook/features/recipe/domain/repositories/recipe_repository.dart';
@@ -17,38 +15,33 @@ void main() {
       _recipe('local-1', '我的烤鸡', RecipeSource.userCreated),
       _recipe('ai-1', 'AI 香菇饭', RecipeSource.aiGenerated),
     ]);
-    service = RecipeToolService(
-      localRepository: repository,
-      cloudService: MCPService(),
-      random: Random(1),
-    );
+    service = RecipeToolService(localRepository: repository, random: Random(1));
   });
 
-  test('本地工具目录稳定排序，并仅本地暴露收藏工具', () {
-    final localNames = service
-        .definitionsFor(RecipeDataMode.local)
-        .map((tool) => tool['name'] as String)
-        .toList();
-    final cloudNames = service
-        .definitionsFor(RecipeDataMode.cloud)
+  test('本地工具目录稳定排序并包含完整工具集', () {
+    final names = service
+        .definitions()
         .map((tool) => tool['name'] as String)
         .toList();
 
-    expect(localNames, orderedEquals([...localNames]..sort()));
-    expect(localNames, contains('getFavoriteRecipes'));
-    expect(cloudNames, isNot(contains('getFavoriteRecipes')));
-    expect(localNames, contains('findRecipesByIngredients'));
-    expect(localNames, contains('getMyRecipes'));
-    expect(localNames, contains('getRecipePersonalInfo'));
-    expect(localNames, contains('listRecipeCategories'));
-    expect(cloudNames, isNot(contains('findRecipesByIngredients')));
-    expect(localNames, isNot(contains('getAllRecipes')));
-    expect(localNames, contains('searchRecipes'));
+    expect(names, orderedEquals([...names]..sort()));
+    expect(names, hasLength(11));
+    expect(
+      names,
+      containsAll([
+        'getFavoriteRecipes',
+        'findRecipesByIngredients',
+        'getMyRecipes',
+        'getRecipePersonalInfo',
+        'listRecipeCategories',
+        'searchRecipes',
+      ]),
+    );
+    expect(names, isNot(contains('getAllRecipes')));
   });
 
   test('本地搜索同时读取内置、用户和已保存 AI 菜谱，并只返回摘要', () async {
     final result = await service.execute(
-      mode: RecipeDataMode.local,
       toolName: 'searchRecipes',
       input: const {'query': '', 'limit': 20},
     );
@@ -65,7 +58,6 @@ void main() {
 
   test('本地搜索兼容常见菜名别名', () async {
     final result = await service.execute(
-      mode: RecipeDataMode.local,
       toolName: 'searchRecipes',
       input: const {'query': '西红柿炒蛋'},
     );
@@ -87,7 +79,6 @@ void main() {
       ),
     );
     final result = await service.execute(
-      mode: RecipeDataMode.local,
       toolName: 'searchRecipes',
       input: const {'query': '', 'limit': 2},
     );
@@ -105,7 +96,7 @@ void main() {
             _recipe('extra-$index', '测试菜$index', RecipeSource.userCreated),
       ),
     );
-    final tools = service.definitionsFor(RecipeDataMode.local);
+    final tools = service.definitions();
     for (final name in [
       'searchRecipes',
       'getRecipeById',
@@ -122,12 +113,10 @@ void main() {
     }
 
     final defaultResult = await service.execute(
-      mode: RecipeDataMode.local,
       toolName: 'searchRecipes',
       input: const {'query': ''},
     );
     final completeResult = await service.execute(
-      mode: RecipeDataMode.local,
       toolName: 'searchRecipes',
       input: const {'query': '', 'limit': 25},
     );
@@ -138,10 +127,9 @@ void main() {
     expect(completeResult['truncated'], isFalse);
   });
 
-  test('执行层拒绝云端模式调用本地收藏工具', () async {
+  test('执行层拒绝未授权工具', () async {
     final result = await service.execute(
-      mode: RecipeDataMode.cloud,
-      toolName: 'getFavoriteRecipes',
+      toolName: 'unknownTool',
       input: const {},
     );
 
@@ -152,7 +140,6 @@ void main() {
   test('本地创建只生成结构化草稿，不直接写仓储', () async {
     final before = (await repository.getAllRecipes()).length;
     final result = await service.execute(
-      mode: RecipeDataMode.local,
       toolName: 'createRecipe',
       input: const {
         'recipe': {
@@ -175,7 +162,6 @@ void main() {
     ]);
 
     final result = await service.execute(
-      mode: RecipeDataMode.local,
       toolName: 'findRecipesByIngredients',
       input: const {
         'ingredients': ['西红柿', '鸡蛋'],
@@ -191,17 +177,14 @@ void main() {
 
   test('本地专属工具可读取分类、我的菜谱和个人信息', () async {
     final categories = await service.execute(
-      mode: RecipeDataMode.local,
       toolName: 'listRecipeCategories',
       input: const {},
     );
     final mine = await service.execute(
-      mode: RecipeDataMode.local,
       toolName: 'getMyRecipes',
       input: const {},
     );
     final personal = await service.execute(
-      mode: RecipeDataMode.local,
       toolName: 'getRecipePersonalInfo',
       input: const {'id': 'bundled-1'},
     );

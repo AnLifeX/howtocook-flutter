@@ -8,7 +8,7 @@ abstract class AIService {
   /// 发送消息（流式响应）
   ///
   /// [messages] 对话历史（包含当前消息）
-  /// [tools] MCP 工具定义（可选）
+  /// [tools] 应用工具定义（可选）
   /// [maxTokens] 最大生成 token 数
   ///
   /// 返回: Stream\<String\> - 流式文本响应
@@ -23,7 +23,7 @@ abstract class AIService {
   /// 发送消息（非流式响应）
   ///
   /// [messages] 对话历史（包含当前消息）
-  /// [tools] MCP 工具定义（可选）
+  /// [tools] 应用工具定义（可选）
   /// [maxTokens] 最大生成 token 数
   /// [onTextChunk] 文本分块回调（可选，用于在等待完整响应时实时显示文本）
   /// [onReasoningContent] 推理内容回调（可选，用于显示 AI 的思考过程）

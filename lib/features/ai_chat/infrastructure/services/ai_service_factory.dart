@@ -3,7 +3,6 @@ import '../../domain/services/ai_service.dart';
 import '../adapters/claude_adapter.dart';
 import '../adapters/openai_adapter.dart';
 import '../adapters/deepseek_adapter.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// AI Service 工厂
 ///
@@ -22,11 +21,6 @@ class AIServiceFactory {
 
     switch (apiFormat) {
       case AIAPIFormat.anthropicMessages:
-        // 获取 MCP 服务器 URL (如果配置支持 MCP)
-        final mcpUrl = config.capabilities.supportsMCP
-            ? dotenv.env['MCP_BASE_URL']
-            : null;
-
         return ClaudeAdapter(
           apiKey: apiKey,
           modelId: config.modelId,
@@ -35,7 +29,6 @@ class AIServiceFactory {
               (config.provider == AIProvider.deepseek
                   ? 'https://api.deepseek.com/anthropic'
                   : null),
-          mcpServerUrl: mcpUrl != null ? '$mcpUrl/mcp' : null,
           enableThinking: config.capabilities.enableThinking,
           thinkingBudgetTokens: config.capabilities.thinkingBudgetTokens,
         );

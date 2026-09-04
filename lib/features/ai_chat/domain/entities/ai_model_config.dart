@@ -84,7 +84,7 @@ class ModelCapabilities with _$ModelCapabilities {
   const factory ModelCapabilities({
     @Default(false) bool supportsImageInput, // 支持图片输入
     @Default(false) bool supportsFileInput, // 支持文件输入
-    @Default(true) bool supportsMCP, // 支持 MCP 工具调用
+    @Default(true) bool supportsTools, // 支持应用工具调用
     @Default(true) bool enableStreaming, // 启用流式输出
     @Default(false) bool enableThinking, // 启用思考链（Extended Thinking）
     @Default(10000) int thinkingBudgetTokens, // 思考预算 token 数
@@ -93,7 +93,12 @@ class ModelCapabilities with _$ModelCapabilities {
   }) = _ModelCapabilities;
 
   factory ModelCapabilities.fromJson(Map<String, dynamic> json) =>
-      _$ModelCapabilitiesFromJson(json);
+      _$ModelCapabilitiesFromJson({
+        ...json,
+        if (!json.containsKey('supportsTools') &&
+            json.containsKey('supportsMCP'))
+          'supportsTools': json['supportsMCP'],
+      });
 }
 
 /// 模型验证状态

@@ -581,7 +581,7 @@ ModelCapabilities _$ModelCapabilitiesFromJson(Map<String, dynamic> json) {
 mixin _$ModelCapabilities {
   bool get supportsImageInput => throw _privateConstructorUsedError; // 支持图片输入
   bool get supportsFileInput => throw _privateConstructorUsedError; // 支持文件输入
-  bool get supportsMCP => throw _privateConstructorUsedError; // 支持 MCP 工具调用
+  bool get supportsTools => throw _privateConstructorUsedError; // 支持应用工具调用
   bool get enableStreaming => throw _privateConstructorUsedError; // 启用流式输出
   bool get enableThinking =>
       throw _privateConstructorUsedError; // 启用思考链（Extended Thinking）
@@ -605,7 +605,7 @@ abstract class $ModelCapabilitiesCopyWith<$Res> {
   $Res call(
       {bool supportsImageInput,
       bool supportsFileInput,
-      bool supportsMCP,
+      bool supportsTools,
       bool enableStreaming,
       bool enableThinking,
       int thinkingBudgetTokens,
@@ -628,7 +628,7 @@ class _$ModelCapabilitiesCopyWithImpl<$Res, $Val extends ModelCapabilities>
   $Res call({
     Object? supportsImageInput = null,
     Object? supportsFileInput = null,
-    Object? supportsMCP = null,
+    Object? supportsTools = null,
     Object? enableStreaming = null,
     Object? enableThinking = null,
     Object? thinkingBudgetTokens = null,
@@ -644,9 +644,9 @@ class _$ModelCapabilitiesCopyWithImpl<$Res, $Val extends ModelCapabilities>
           ? _value.supportsFileInput
           : supportsFileInput // ignore: cast_nullable_to_non_nullable
               as bool,
-      supportsMCP: null == supportsMCP
-          ? _value.supportsMCP
-          : supportsMCP // ignore: cast_nullable_to_non_nullable
+      supportsTools: null == supportsTools
+          ? _value.supportsTools
+          : supportsTools // ignore: cast_nullable_to_non_nullable
               as bool,
       enableStreaming: null == enableStreaming
           ? _value.enableStreaming
@@ -683,7 +683,7 @@ abstract class _$$ModelCapabilitiesImplCopyWith<$Res>
   $Res call(
       {bool supportsImageInput,
       bool supportsFileInput,
-      bool supportsMCP,
+      bool supportsTools,
       bool enableStreaming,
       bool enableThinking,
       int thinkingBudgetTokens,
@@ -704,7 +704,7 @@ class __$$ModelCapabilitiesImplCopyWithImpl<$Res>
   $Res call({
     Object? supportsImageInput = null,
     Object? supportsFileInput = null,
-    Object? supportsMCP = null,
+    Object? supportsTools = null,
     Object? enableStreaming = null,
     Object? enableThinking = null,
     Object? thinkingBudgetTokens = null,
@@ -720,9 +720,9 @@ class __$$ModelCapabilitiesImplCopyWithImpl<$Res>
           ? _value.supportsFileInput
           : supportsFileInput // ignore: cast_nullable_to_non_nullable
               as bool,
-      supportsMCP: null == supportsMCP
-          ? _value.supportsMCP
-          : supportsMCP // ignore: cast_nullable_to_non_nullable
+      supportsTools: null == supportsTools
+          ? _value.supportsTools
+          : supportsTools // ignore: cast_nullable_to_non_nullable
               as bool,
       enableStreaming: null == enableStreaming
           ? _value.enableStreaming
@@ -754,7 +754,7 @@ class _$ModelCapabilitiesImpl implements _ModelCapabilities {
   const _$ModelCapabilitiesImpl(
       {this.supportsImageInput = false,
       this.supportsFileInput = false,
-      this.supportsMCP = true,
+      this.supportsTools = true,
       this.enableStreaming = true,
       this.enableThinking = false,
       this.thinkingBudgetTokens = 10000,
@@ -774,8 +774,8 @@ class _$ModelCapabilitiesImpl implements _ModelCapabilities {
 // 支持文件输入
   @override
   @JsonKey()
-  final bool supportsMCP;
-// 支持 MCP 工具调用
+  final bool supportsTools;
+// 支持应用工具调用
   @override
   @JsonKey()
   final bool enableStreaming;
@@ -798,7 +798,7 @@ class _$ModelCapabilitiesImpl implements _ModelCapabilities {
 
   @override
   String toString() {
-    return 'ModelCapabilities(supportsImageInput: $supportsImageInput, supportsFileInput: $supportsFileInput, supportsMCP: $supportsMCP, enableStreaming: $enableStreaming, enableThinking: $enableThinking, thinkingBudgetTokens: $thinkingBudgetTokens, maxTokens: $maxTokens, contextWindow: $contextWindow)';
+    return 'ModelCapabilities(supportsImageInput: $supportsImageInput, supportsFileInput: $supportsFileInput, supportsTools: $supportsTools, enableStreaming: $enableStreaming, enableThinking: $enableThinking, thinkingBudgetTokens: $thinkingBudgetTokens, maxTokens: $maxTokens, contextWindow: $contextWindow)';
   }
 
   @override
@@ -810,8 +810,8 @@ class _$ModelCapabilitiesImpl implements _ModelCapabilities {
                 other.supportsImageInput == supportsImageInput) &&
             (identical(other.supportsFileInput, supportsFileInput) ||
                 other.supportsFileInput == supportsFileInput) &&
-            (identical(other.supportsMCP, supportsMCP) ||
-                other.supportsMCP == supportsMCP) &&
+            (identical(other.supportsTools, supportsTools) ||
+                other.supportsTools == supportsTools) &&
             (identical(other.enableStreaming, enableStreaming) ||
                 other.enableStreaming == enableStreaming) &&
             (identical(other.enableThinking, enableThinking) ||
@@ -830,7 +830,7 @@ class _$ModelCapabilitiesImpl implements _ModelCapabilities {
       runtimeType,
       supportsImageInput,
       supportsFileInput,
-      supportsMCP,
+      supportsTools,
       enableStreaming,
       enableThinking,
       thinkingBudgetTokens,
@@ -856,7 +856,7 @@ abstract class _ModelCapabilities implements ModelCapabilities {
   const factory _ModelCapabilities(
       {final bool supportsImageInput,
       final bool supportsFileInput,
-      final bool supportsMCP,
+      final bool supportsTools,
       final bool enableStreaming,
       final bool enableThinking,
       final int thinkingBudgetTokens,
@@ -871,8 +871,8 @@ abstract class _ModelCapabilities implements ModelCapabilities {
   @override // 支持图片输入
   bool get supportsFileInput;
   @override // 支持文件输入
-  bool get supportsMCP;
-  @override // 支持 MCP 工具调用
+  bool get supportsTools;
+  @override // 支持应用工具调用
   bool get enableStreaming;
   @override // 启用流式输出
   bool get enableThinking;

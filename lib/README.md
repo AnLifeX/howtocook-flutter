@@ -92,7 +92,7 @@ lib/
 - **包含**:
   - `datasources/`: 数据源（网络、本地数据库、文件）
   - `repositories/`: 仓储实现
-  - `services/`: 外部服务实现（MCP、AI API）
+  - `services/`: 外部服务实现（AI API）与应用内置工具
 
 ### 4. Presentation Layer（表现层）
 - **职责**: UI 展示和用户交互
@@ -133,7 +133,7 @@ lib/
 ```
 Presentation → Application → Domain ← Infrastructure
                     ↓
-                  MCP Service
+                  App Tools
                   AI Services
                   Local Storage
 ```
