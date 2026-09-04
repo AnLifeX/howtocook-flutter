@@ -37,6 +37,11 @@ void main() {
     expect(localNames, orderedEquals([...localNames]..sort()));
     expect(localNames, contains('getFavoriteRecipes'));
     expect(cloudNames, isNot(contains('getFavoriteRecipes')));
+    expect(localNames, contains('findRecipesByIngredients'));
+    expect(localNames, contains('getMyRecipes'));
+    expect(localNames, contains('getRecipePersonalInfo'));
+    expect(localNames, contains('listRecipeCategories'));
+    expect(cloudNames, isNot(contains('findRecipesByIngredients')));
     expect(localNames, isNot(contains('getAllRecipes')));
     expect(localNames, contains('searchRecipes'));
   });
@@ -121,6 +126,49 @@ void main() {
     expect(result['draftOnly'], isTrue);
     expect((await repository.getAllRecipes()).length, before);
   });
+
+  test('现有食材匹配优先返回缺少食材更少的菜谱，并排除忌口', () async {
+    repository.recipes.addAll([
+      _recipeWithIngredients('tomato-egg', '番茄炒蛋', ['番茄', '鸡蛋']),
+      _recipeWithIngredients('egg-rice', '蛋炒饭', ['鸡蛋', '米饭', '火腿']),
+    ]);
+
+    final result = await service.execute(
+      mode: RecipeDataMode.local,
+      toolName: 'findRecipesByIngredients',
+      input: const {
+        'ingredients': ['西红柿', '鸡蛋'],
+        'excludeIngredients': ['火腿'],
+      },
+    );
+
+    final recipes = result['recipes'] as List<dynamic>;
+    expect(recipes.first['id'], 'tomato-egg');
+    expect(recipes.map((item) => item['id']), isNot(contains('egg-rice')));
+    expect(recipes.first['missingIngredientCount'], 0);
+  });
+
+  test('本地专属工具可读取分类、我的菜谱和个人信息', () async {
+    final categories = await service.execute(
+      mode: RecipeDataMode.local,
+      toolName: 'listRecipeCategories',
+      input: const {},
+    );
+    final mine = await service.execute(
+      mode: RecipeDataMode.local,
+      toolName: 'getMyRecipes',
+      input: const {},
+    );
+    final personal = await service.execute(
+      mode: RecipeDataMode.local,
+      toolName: 'getRecipePersonalInfo',
+      input: const {'id': 'bundled-1'},
+    );
+
+    expect(categories['categories'], hasLength(1));
+    expect((mine['recipes'] as List).map((item) => item['id']), containsAll(['local-1', 'ai-1']));
+    expect(personal['isFavorite'], isTrue);
+  });
 }
 
 Recipe _recipe(
@@ -140,6 +188,21 @@ Recipe _recipe(
     hash: id,
     source: source,
     isFavorite: favorite,
+  );
+}
+
+Recipe _recipeWithIngredients(String id, String name, List<String> ingredients) {
+  return Recipe(
+    id: id,
+    name: name,
+    category: 'vegetable_dish',
+    categoryName: '素菜',
+    difficulty: 2,
+    ingredients: ingredients
+        .map((name) => Ingredient(name: name, text: '$name 适量'))
+        .toList(),
+    steps: const [CookingStep(description: '加热')],
+    hash: id,
   );
 }
 

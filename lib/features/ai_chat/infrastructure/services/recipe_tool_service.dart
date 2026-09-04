@@ -201,22 +201,57 @@ class RecipeToolService {
     ),
   ];
 
-  static final Map<String, dynamic> _favoritesTool = _tool(
-    'getFavoriteRecipes',
-    '读取用户在本机收藏的菜谱摘要。仅本地数据模式允许。',
-    {
+  static final List<Map<String, dynamic>> _localTools = [
+    _tool('getFavoriteRecipes', '读取用户在本机收藏的菜谱摘要。仅本地数据模式允许。', {
       'type': 'object',
       'properties': {
         'limit': {'type': 'integer', 'minimum': 1, 'maximum': maxListResults},
       },
-    },
-  );
+    }),
+    _tool('listRecipeCategories', '列出本地菜谱分类、分类 ID 和数量，用于浏览前确认可用分类。', {
+      'type': 'object',
+      'properties': <String, dynamic>{},
+    }),
+    _tool('findRecipesByIngredients', '根据用户现有食材匹配本地菜谱，优先返回缺少必需食材更少的结果。', {
+      'type': 'object',
+      'properties': {
+        'ingredients': {
+          'type': 'array',
+          'items': {'type': 'string'},
+          'minItems': 1,
+        },
+        'excludeIngredients': {
+          'type': 'array',
+          'items': {'type': 'string'},
+          'description': '过敏、忌口或明确不想使用的食材。',
+        },
+        'category': {'type': 'string', 'description': '可选分类 ID 或中文名。'},
+        'maxDifficulty': {'type': 'integer', 'minimum': 1, 'maximum': 5},
+        'limit': {'type': 'integer', 'minimum': 1, 'maximum': maxListResults},
+      },
+      'required': ['ingredients'],
+    }),
+    _tool('getMyRecipes', '读取用户自建、修改、扫码导入或已保存的 AI 菜谱摘要。', {
+      'type': 'object',
+      'properties': {
+        'query': {'type': 'string', 'description': '可选菜名、分类或食材关键词。'},
+        'limit': {'type': 'integer', 'minimum': 1, 'maximum': maxListResults},
+      },
+    }),
+    _tool('getRecipePersonalInfo', '按菜谱原始 ID 读取本机收藏状态和用户笔记。', {
+      'type': 'object',
+      'properties': {
+        'id': {'type': 'string'},
+      },
+      'required': ['id'],
+    }),
+  ];
 
   List<Map<String, dynamic>> definitionsFor(RecipeDataMode mode) {
     final tools =
         [
             ..._commonTools,
-            if (mode == RecipeDataMode.local) _favoritesTool,
+            if (mode == RecipeDataMode.local) ..._localTools,
           ].map((item) => _canonicalize(item) as Map<String, dynamic>).toList()
           ..sort(
             (a, b) => a['name'].toString().compareTo(b['name'].toString()),
@@ -299,6 +334,48 @@ class RecipeToolService {
         };
       case 'getFavoriteRecipes':
         return _listResult(await _localRepository.getFavoriteRecipes(), input);
+      case 'listRecipeCategories':
+        final counts = <String, Map<String, dynamic>>{};
+        for (final recipe in await _localRepository.getAllRecipes()) {
+          final category = counts.putIfAbsent(
+            recipe.category,
+            () => {
+              'id': recipe.category,
+              'name': recipe.categoryName,
+              'count': 0,
+            },
+          );
+          category['count'] = (category['count'] as int) + 1;
+        }
+        final categories = counts.values.toList()
+          ..sort((a, b) => a['name'].toString().compareTo(b['name'].toString()));
+        return {
+          'success': true,
+          'categories': categories,
+          'count': categories.length,
+        };
+      case 'findRecipesByIngredients':
+        return _findLocalRecipesByIngredients(input);
+      case 'getMyRecipes':
+        var recipes = (await _localRepository.getAllRecipes())
+            .where(_isMyRecipe)
+            .toList();
+        final query = _string(input['query']);
+        if (query.isNotEmpty) recipes = _fallbackLocalSearch(recipes, query);
+        return _listResult(recipes, input, query: query);
+      case 'getRecipePersonalInfo':
+        final id = _requiredString(input['id'], 'id');
+        final recipe = await _localRepository.getRecipeById(id);
+        if (recipe == null) {
+          return {'success': false, 'id': id, 'error': '未找到菜谱'};
+        }
+        return {
+          'success': true,
+          'id': recipe.id,
+          'name': recipe.name,
+          'isFavorite': recipe.isFavorite,
+          'userNote': recipe.userNote,
+        };
       case 'recommendMeals':
         return _localRecommendations(input, randomize: false);
       case 'whatToEat':
@@ -416,6 +493,95 @@ class RecipeToolService {
       if (blocked.isNotEmpty) 'excluded': blocked,
     };
   }
+
+  Future<Map<String, dynamic>> _findLocalRecipesByIngredients(
+    Map<String, dynamic> input,
+  ) async {
+    final available = _strings(input['ingredients']);
+    if (available.isEmpty) {
+      throw const FormatException('ingredients 至少需要一项');
+    }
+    final excluded = _strings(input['excludeIngredients']);
+    final category = _string(input['category']);
+    final maxDifficulty = input['maxDifficulty'] == null
+        ? 5
+        : _int(input['maxDifficulty'], 5, 1, 5);
+    var recipes = _filterCategory(
+      await _localRepository.getAllRecipes(),
+      category,
+    ).where((recipe) => recipe.difficulty <= maxDifficulty);
+
+    final matches = <Map<String, dynamic>>[];
+    for (final recipe in recipes) {
+      if (excluded.any(
+        (term) => recipe.ingredients.any(
+          (ingredient) => _ingredientMatches(ingredient, term),
+        ),
+      )) {
+        continue;
+      }
+      final matched = available
+          .where(
+            (term) => recipe.ingredients.any(
+              (ingredient) => _ingredientMatches(ingredient, term),
+            ),
+          )
+          .toSet()
+          .toList();
+      if (matched.isEmpty) continue;
+      final missing = recipe.ingredients
+          .where(
+            (ingredient) =>
+                !ingredient.optional &&
+                !available.any((term) => _ingredientMatches(ingredient, term)),
+          )
+          .map((ingredient) => ingredient.name)
+          .where((name) => name.trim().isNotEmpty)
+          .toSet()
+          .toList();
+      matches.add({
+        ..._summary(recipe),
+        'matchedIngredients': matched,
+        'missingIngredients': missing.take(8).toList(),
+        'missingIngredientCount': missing.length,
+      });
+    }
+    matches.sort((a, b) {
+      final byMissing = (a['missingIngredientCount'] as int).compareTo(
+        b['missingIngredientCount'] as int,
+      );
+      if (byMissing != 0) return byMissing;
+      final byMatched = (b['matchedIngredients'] as List).length.compareTo(
+        (a['matchedIngredients'] as List).length,
+      );
+      if (byMatched != 0) return byMatched;
+      return a['name'].toString().compareTo(b['name'].toString());
+    });
+    final limit = _int(input['limit'], maxListResults, 1, maxListResults);
+    return {
+      'success': true,
+      'ingredients': available,
+      if (excluded.isNotEmpty) 'excluded': excluded,
+      if (category.isNotEmpty) 'category': category,
+      'recipes': matches.take(limit).toList(),
+      'count': matches.length.clamp(0, limit),
+      'totalMatches': matches.length,
+      'truncated': matches.length > limit,
+    };
+  }
+
+  bool _ingredientMatches(Ingredient ingredient, String query) {
+    final haystack = _normalizeSearchText('${ingredient.name} ${ingredient.text}');
+    return _searchVariants(query).any(haystack.contains);
+  }
+
+  bool _isMyRecipe(Recipe recipe) => switch (recipe.source) {
+    RecipeSource.userCreated ||
+    RecipeSource.userModified ||
+    RecipeSource.scanned ||
+    RecipeSource.aiGenerated => true,
+    _ => false,
+  };
 
   Map<String, dynamic> _localCreate(Map<String, dynamic> input) {
     final recipe = _map(input['recipe']);

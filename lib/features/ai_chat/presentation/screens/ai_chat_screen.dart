@@ -1543,6 +1543,10 @@ class _AIChatScreenState extends ConsumerState<AIChatScreen>
       'recommendMeals' => '筛选用餐推荐中...',
       'whatToEat' => '搭配今日菜单中...',
       'getFavoriteRecipes' => '读取本地收藏中...',
+      'listRecipeCategories' => '整理本地分类中...',
+      'findRecipesByIngredients' => '匹配现有食材中...',
+      'getMyRecipes' => '读取我的菜谱中...',
+      'getRecipePersonalInfo' => '读取收藏和笔记中...',
       'getRecipeDetail' => '获取详情中...',
       _ => '正在执行应用工具...',
     };
